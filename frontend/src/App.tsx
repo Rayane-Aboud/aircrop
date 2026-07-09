@@ -1,121 +1,145 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getAnalysisStatus, uploadImage } from './api'
+import type { AnalysisResult } from './api'
+
+const POLL_INTERVAL_MS = 2000
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const pollRef = useRef<number | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  useEffect(() => stopPolling, [stopPolling])
+
+  const startPolling = useCallback(
+    (id: string) => {
+      stopPolling()
+      pollRef.current = window.setInterval(() => {
+        getAnalysisStatus(id)
+          .then((data) => {
+            setResult(data)
+            if (data.status === 'done' || data.status === 'failed') {
+              stopPolling()
+            }
+          })
+          .catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : 'Failed to check status')
+            stopPolling()
+          })
+      }, POLL_INTERVAL_MS)
+    },
+    [stopPolling],
+  )
+
+  const handleFile = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith('image/')) {
+        setError('Please drop an image file.')
+        return
+      }
+
+      setError(null)
+      setResult(null)
+      setPreview(URL.createObjectURL(file))
+
+      uploadImage(file)
+        .then((initial) => {
+          setResult(initial)
+          startPolling(initial.id)
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : 'Upload failed')
+        })
+    },
+    [startPolling],
+  )
+
+  const onDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setIsDragging(false)
+      const file = e.dataTransfer.files?.[0]
+      if (file) handleFile(file)
+    },
+    [handleFile],
+  )
+
+  const onSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (file) handleFile(file)
+    },
+    [handleFile],
+  )
+
+  const isProcessing = result?.status === 'pending' || result?.status === 'processing'
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-6 p-6">
+      <h1 className="text-2xl font-semibold text-slate-800">Crop Health Check</h1>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault()
+          setIsDragging(true)
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={onDrop}
+        onClick={() => document.getElementById('file-input')?.click()}
+        className={`w-full max-w-md rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer ${
+          isDragging ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 bg-white'
+        }`}
+      >
+        {preview && (
+          <img
+            src={preview}
+            alt="Preview"
+            className="mx-auto mb-4 max-h-48 rounded-lg object-contain"
+          />
+        )}
+        <p className="text-slate-500">Drop a crop image here, or click to select one</p>
+        <input id="file-input" type="file" accept="image/*" className="hidden" onChange={onSelect} />
+      </div>
+
+      {error && <p className="text-red-600">{error}</p>}
+
+      {isProcessing && <p className="text-slate-500 animate-pulse">Analyzing image…</p>}
+
+      {result?.status === 'done' && result.report && result.crop_health && (
+        <div className="w-full max-w-md rounded-xl bg-white p-6 shadow">
+          <h2 className="text-lg font-semibold text-slate-800 mb-2">
+            Health: {result.crop_health.status.replace(/_/g, ' ')}
+          </h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Confidence: {(result.crop_health.confidence * 100).toFixed(0)}%
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
+          {result.crop_health.issues_detected.length > 0 && (
+            <p className="text-sm text-slate-700 mb-2">
+              Issues: {result.crop_health.issues_detected.join(', ')}
+            </p>
+          )}
+          <p className="text-slate-700 mb-3">{result.report.summary}</p>
+          <ul className="list-disc list-inside text-slate-600 text-sm">
+            {result.report.recommendations.map((rec) => (
+              <li key={rec}>{rec}</li>
+            ))}
           </ul>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      {result?.status === 'failed' && (
+        <p className="text-red-600">Analysis failed: {result.error}</p>
+      )}
+    </div>
   )
 }
 

@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: backend
-        image: your-docker-username/aircrop-backend:latest
+        # Using lowercase rayane-aboud as required by GHCR
+        image: ghcr.io/rayane-aboud/aircrop-backend:latest
         ports:
         - containerPort: 8000
 ---

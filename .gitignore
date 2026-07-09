@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 venv/
 .env
+db.sqlite3
+media/
 
 # Node
 node_modules/
