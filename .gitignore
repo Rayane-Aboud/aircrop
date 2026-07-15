@@ -10,3 +10,6 @@ media/
 node_modules/
 dist/
 .output/
+
+# Standalone YOLO prototype (superseded by backend/api ml integration)
+yoloApp/

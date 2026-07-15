@@ -1,9 +1,26 @@
+# Media PVC: user uploads + annotated images (MEDIA_ROOT=/app/media) live here
+# so they persist across pod restarts and image redeploys.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
 spec:
   replicas: 1
+  # Recreate so the single RWO media volume is released before the new pod
+  # mounts it on redeploy.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: backend
@@ -18,6 +35,18 @@ spec:
         image: ghcr.io/rayane-aboud/aircrop-backend:latest
         ports:
         - containerPort: 8000
+        # DB credentials + host come from the Postgres secret. Presence of
+        # POSTGRES_DB flips Django to the Postgres backend (see settings.py).
+        envFrom:
+        - secretRef:
+            name: postgres-secret
+        volumeMounts:
+        - name: media
+          mountPath: /app/media
+      volumes:
+      - name: media
+        persistentVolumeClaim:
+          claimName: media-pvc
 ---
 apiVersion: v1
 kind: Service

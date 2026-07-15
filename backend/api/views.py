@@ -1,57 +1,20 @@
-import random
+import logging
+import tempfile
 import threading
-import time
+from pathlib import Path
 
-from django.http import JsonResponse
+from django.core.files import File
+from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from . import ml
 from .models import ImageAnalysis
 
+logger = logging.getLogger(__name__)
 
-def _run_external_or_dummy_analysis(image_path):
-    """
-    Placeholder for a real crop-health API integration.
-
-    To wire in a real service (e.g. Plant.id, Kindwise), replace the body
-    of this function with an HTTP call to that API using `image_path`,
-    and map its response onto the (report, crop_health) shape below.
-    Until then, this returns realistic dummy data.
-    """
-    del image_path  # unused for now, kept for future real API call
-
-    health_status = random.choice(['healthy', 'moderate_stress', 'disease_detected'])
-
-    issues = []
-    if health_status != 'healthy':
-        issues = random.sample(
-            ['nutrient_deficiency', 'leaf_blight', 'pest_damage', 'water_stress'],
-            k=random.randint(1, 2),
-        )
-
-    crop_health = {
-        'status': health_status,
-        'confidence': round(random.uniform(0.75, 0.99), 2),
-        'issues_detected': issues,
-    }
-
-    recommendations = {
-        'healthy': ['Continue current watering and fertilization schedule.'],
-        'moderate_stress': ['Increase monitoring frequency.', 'Check irrigation levels.'],
-        'disease_detected': [
-            'Isolate affected area if possible.',
-            'Consult an agronomist.',
-            'Consider targeted treatment.',
-        ],
-    }[health_status]
-
-    report = {
-        'summary': f"Analysis complete. Crop appears {health_status.replace('_', ' ')}.",
-        'recommendations': recommendations,
-        'source': 'dummy',
-    }
-
-    return report, crop_health
+SAMPLE_IMAGES_DIR = Path(__file__).resolve().parent / 'sample_images'
+SAMPLE_IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png'}
 
 
 def _process_analysis(analysis_id):
@@ -61,15 +24,23 @@ def _process_analysis(analysis_id):
         analysis.status = ImageAnalysis.Status.PROCESSING
         analysis.save(update_fields=['status', 'updated_at'])
 
-        # Simulated processing latency (stand-in for a real external API call).
-        time.sleep(3)
+        update_fields = ['report', 'crop_health', 'status', 'updated_at']
 
-        report, crop_health = _run_external_or_dummy_analysis(analysis.image.path)
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                annotated_path = Path(tmp_dir) / f'annotated_{analysis.id}.jpg'
+                report, crop_health = ml.analyze_with_yolo(analysis.image.path, annotated_path)
+                with open(annotated_path, 'rb') as f:
+                    analysis.annotated_image.save(annotated_path.name, File(f), save=False)
+                update_fields.append('annotated_image')
+        except ml.ModelUnavailable as exc:
+            logger.warning('YOLO model unavailable (%s); falling back to dummy analysis', exc)
+            report, crop_health = ml.dummy_analysis()
 
         analysis.report = report
         analysis.crop_health = crop_health
         analysis.status = ImageAnalysis.Status.DONE
-        analysis.save(update_fields=['report', 'crop_health', 'status', 'updated_at'])
+        analysis.save(update_fields=update_fields)
     except Exception as exc:  # noqa: BLE001 - always record failure on the row
         ImageAnalysis.objects.filter(id=analysis_id).update(
             status=ImageAnalysis.Status.FAILED, error=str(exc)
@@ -105,6 +76,11 @@ def analysis_status(request, analysis_id):
         'id': str(analysis.id),
         'status': analysis.status,
         'image_url': request.build_absolute_uri(analysis.image.url) if analysis.image else None,
+        'annotated_image_url': (
+            request.build_absolute_uri(analysis.annotated_image.url)
+            if analysis.annotated_image
+            else None
+        ),
     }
 
     if analysis.status == ImageAnalysis.Status.DONE:
@@ -114,3 +90,31 @@ def analysis_status(request, analysis_id):
         data['error'] = analysis.error
 
     return JsonResponse(data)
+
+
+def _sample_files():
+    if not SAMPLE_IMAGES_DIR.exists():
+        return []
+    return sorted(
+        p for p in SAMPLE_IMAGES_DIR.iterdir() if p.suffix.lower() in SAMPLE_IMAGE_SUFFIXES
+    )
+
+
+@require_http_methods(['GET'])
+def list_samples(request):
+    samples = [
+        {
+            'id': p.stem,
+            'image_url': request.build_absolute_uri(f'/api/samples/{p.stem}/image/'),
+        }
+        for p in _sample_files()
+    ]
+    return JsonResponse({'samples': samples})
+
+
+@require_http_methods(['GET'])
+def sample_image(request, sample_id):
+    for p in _sample_files():
+        if p.stem == sample_id:
+            return FileResponse(open(p, 'rb'), content_type='image/jpeg')
+    return JsonResponse({'error': 'Not found'}, status=404)

@@ -21,12 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-+09)&+kfqtjv!%wsj72qgwxh69kfdv1d5hw$fcdv-ne-=ekoo*'
+# Falls back to the insecure dev key when SECRET_KEY isn't set (local dev only).
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-+09)&+kfqtjv!%wsj72qgwxh69kfdv1d5hw$fcdv-ne-=ekoo*',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Off by default; set DJANGO_DEBUG=1 to enable locally.
+DEBUG = os.environ.get('DJANGO_DEBUG', '0') == '1'
 
+# Base hosts plus any extra comma-separated hosts from the ALLOWED_HOSTS env var.
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'aircrop.51.91.101.83.nip.io', '.nip.io']
+ALLOWED_HOSTS += [h for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h]
 
 
 # Application definition
@@ -76,12 +83,26 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Use Postgres when POSTGRES_DB is provided (production); otherwise fall back to
+# SQLite so local dev works with no setup.
+if os.environ.get('POSTGRES_DB'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ['POSTGRES_DB'],
+            'USER': os.environ.get('POSTGRES_USER', 'postgres'),
+            'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
+            'HOST': os.environ.get('POSTGRES_HOST', 'postgres-service'),
+            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -125,6 +146,9 @@ MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Crop-health YOLO model (see api/ml.py)
+YOLO_MODEL_PATH = BASE_DIR / 'api' / 'ml_models' / 'crop_health' / 'best.pt'
 
 # CORS: allow all origins in dev; in production, set CORS_ALLOWED_ORIGINS
 # (comma-separated) via env, e.g. "https://aircrop.example.com".

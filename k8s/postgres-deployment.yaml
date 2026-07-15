@@ -1,0 +1,88 @@
+# Postgres for Aircrop.
+#
+# Single replica backed by a PersistentVolumeClaim so data survives pod
+# restarts and image redeploys. The credentials live in a Secret that the
+# backend also reads (see backend-deployment.yaml -> envFrom).
+#
+# NOTE: change the password below before deploying. For a quick base64:
+#   echo -n 'your-strong-password' | base64
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+stringData:
+  POSTGRES_DB: aircrop
+  POSTGRES_USER: aircrop
+  POSTGRES_PASSWORD: change-me-please
+  # Consumed by Django (settings.py). Points at the Service below.
+  POSTGRES_HOST: postgres-service
+  POSTGRES_PORT: "5432"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # Uses the cluster default StorageClass (local-path on k3s). Set
+  # storageClassName here if your cluster needs an explicit one.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  # Recreate (not RollingUpdate) so the old pod releases the RWO volume
+  # before the new one mounts it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          env:
+            # Store data in a subdir; Postgres refuses to init on a volume
+            # root that contains a lost+found dir.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "aircrop", "-d", "aircrop"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
