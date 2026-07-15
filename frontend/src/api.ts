@@ -18,14 +18,39 @@ export interface AnalysisReport {
   source: 'yolo' | 'dummy'
 }
 
+export interface Weather {
+  date: string
+  temperature_c: number | null
+  temperature_min_c: number | null
+  temperature_max_c: number | null
+  humidity_pct: number | null
+  rainfall_mm: number | null
+  wind_kmh: number | null
+  source: 'archive' | 'forecast'
+}
+
 export interface AnalysisResult {
   id: string
   status: 'pending' | 'processing' | 'done' | 'failed'
   image_url: string | null
   annotated_image_url: string | null
+  captured_at?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  location_name?: string | null
+  weather?: Weather | null
   report?: AnalysisReport
   crop_health?: CropHealth
   error?: string
+}
+
+// Optional date/location the user can supply on upload (feature 1). Any of
+// these override what EXIF provides; all are optional.
+export interface PhotoMeta {
+  capturedAt?: string
+  latitude?: string
+  longitude?: string
+  locationName?: string
 }
 
 export interface Sample {
@@ -35,9 +60,13 @@ export interface Sample {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
-export async function uploadImage(file: File): Promise<AnalysisResult> {
+export async function uploadImage(file: File, meta?: PhotoMeta): Promise<AnalysisResult> {
   const formData = new FormData()
   formData.append('image', file)
+  if (meta?.capturedAt) formData.append('captured_at', meta.capturedAt)
+  if (meta?.latitude) formData.append('latitude', meta.latitude)
+  if (meta?.longitude) formData.append('longitude', meta.longitude)
+  if (meta?.locationName) formData.append('location_name', meta.locationName)
 
   const res = await fetch(`${API_BASE}/analyze/`, {
     method: 'POST',

@@ -141,8 +141,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-# Media files (user-uploaded crop images)
-MEDIA_URL = 'media/'
+# Media files (user-uploaded crop images).
+# Leading slash is required so FileField.url is an absolute path (/media/...);
+# without it, build_absolute_uri() resolves image URLs relative to the current
+# request path and they 404.
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -16,6 +16,17 @@ class ImageAnalysis(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     report = models.JSONField(null=True, blank=True)
     crop_health = models.JSONField(null=True, blank=True)
+
+    # When/where the photo was taken. Auto-filled from EXIF when present,
+    # otherwise supplied manually by the user on upload.
+    captured_at = models.DateTimeField(null=True, blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    location_name = models.CharField(max_length=255, null=True, blank=True)
+
+    # Weather at that location/date, looked up from Open-Meteo (see weather.py).
+    weather = models.JSONField(null=True, blank=True)
+
     error = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
