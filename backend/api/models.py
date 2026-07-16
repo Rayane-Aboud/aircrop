@@ -1,9 +1,53 @@
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 
+class Land(models.Model):
+    """
+    A plot/field belonging to a farmer and managed by an agronomist.
+
+    Reports (ImageAnalysis rows) are attached to a Land, which is how a report
+    ends up owned by a specific farmer and visible to their agronomist.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+
+    # The farmer who owns this land. The managing agronomist is derived from
+    # farmer.managed_by, but we also store agronomist explicitly so scoping
+    # queries stay a single hop and survive a farmer being re-assigned.
+    farmer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='lands',
+    )
+    agronomist = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='managed_lands',
+    )
+
+    area_hectares = models.FloatField(null=True, blank=True)
+    crop_type = models.CharField(max_length=120, blank=True)
+    location_name = models.CharField(max_length=255, blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class ImageAnalysis(models.Model):
+    """A single crop-health analysis and its generated report."""
+
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
         PROCESSING = 'processing', 'Processing'
@@ -11,6 +55,23 @@ class ImageAnalysis(models.Model):
         FAILED = 'failed', 'Failed'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Ownership. Null on legacy/anonymous rows created before auth existed.
+    land = models.ForeignKey(
+        Land,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='reports',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_reports',
+    )
+
     image = models.ImageField(upload_to='crop_images/%Y/%m/%d/')
     annotated_image = models.ImageField(upload_to='crop_annotated/%Y/%m/%d/', null=True, blank=True)
     # Generated PDF report (annotated image + detailed report + weather + detections).
