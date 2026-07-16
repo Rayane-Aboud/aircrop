@@ -15,7 +15,11 @@ export interface AnalysisReport {
   summary: string
   recommendations: string[]
   detections: Detection[]
-  source: 'yolo' | 'dummy'
+  source: 'yolo' | 'dummy' | 'llm'
+  // Present only when the detailed (LLM-written) report was generated.
+  detailed_findings?: string
+  severity?: string
+  confidence_note?: string
 }
 
 export interface Weather {
@@ -41,6 +45,7 @@ export interface AnalysisResult {
   weather?: Weather | null
   report?: AnalysisReport
   crop_health?: CropHealth
+  report_pdf_url?: string | null
   error?: string
 }
 

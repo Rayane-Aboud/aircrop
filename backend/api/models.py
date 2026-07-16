@@ -13,6 +13,8 @@ class ImageAnalysis(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     image = models.ImageField(upload_to='crop_images/%Y/%m/%d/')
     annotated_image = models.ImageField(upload_to='crop_annotated/%Y/%m/%d/', null=True, blank=True)
+    # Generated PDF report (annotated image + detailed report + weather + detections).
+    report_pdf = models.FileField(upload_to='crop_reports/%Y/%m/%d/', null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     report = models.JSONField(null=True, blank=True)
     crop_health = models.JSONField(null=True, blank=True)

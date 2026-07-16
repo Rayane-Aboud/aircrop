@@ -153,6 +153,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Crop-health YOLO model (see api/ml.py)
 YOLO_MODEL_PATH = BASE_DIR / 'api' / 'ml_models' / 'crop_health' / 'best.pt'
 
+# LLM-written detailed report (see api/llm.py). Google Gemini via REST.
+# When GEMINI_API_KEY is empty the app falls back to the template report,
+# so this is entirely optional. Free-tier key: https://aistudio.google.com/apikey
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+# 'gemini-flash-latest' is a stable alias that tracks a current Flash model.
+# Pinning an exact version (e.g. 'gemini-2.5-flash') can break, as older ones
+# get retired for new API keys. Override per-env with GEMINI_MODEL.
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-latest')
+
 # CORS: allow all origins in dev; in production, set CORS_ALLOWED_ORIGINS
 # (comma-separated) via env, e.g. "https://aircrop.example.com".
 CORS_ALLOW_ALL_ORIGINS = DEBUG

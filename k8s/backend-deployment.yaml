@@ -40,6 +40,21 @@ spec:
         envFrom:
         - secretRef:
             name: postgres-secret
+        # Gemini key for the LLM-written detailed report (api/llm.py).
+        # Kept OUT of git in a Kubernetes Secret — GitHub push protection blocks
+        # committing the raw key. Create it once, out-of-band (not in git):
+        #   kubectl create secret generic gemini-secret \
+        #     --from-literal=api-key='YOUR_GEMINI_KEY'
+        # If the key/quota is unavailable the app falls back to the template report.
+        env:
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-secret
+              key: api-key
+        # 'gemini-flash-latest' is a stable alias; override here if needed.
+        - name: GEMINI_MODEL
+          value: "gemini-flash-latest"
         volumeMounts:
         - name: media
           mountPath: /app/media

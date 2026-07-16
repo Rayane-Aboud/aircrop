@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 30 220 175" width="220" height="175" role="img" aria-label="Aircrop emblem">
+  <defs>
+    <style>
+      .navy { fill: #17323f; }
+      .navyStroke { fill: none; stroke: #17323f; stroke-linecap: round; stroke-linejoin: round; }
+      .leafLight { fill: #4CAF50; }
+      .leafDark { fill: #2E7D46; }
+    </style>
+  </defs>
+  <path class="navyStroke" stroke-width="11" d="M96,104 Q70,92 52,58" />
+  <path class="navyStroke" stroke-width="11" d="M144,104 Q170,92 188,58" />
+  <path class="navyStroke" stroke-width="9" d="M74,74 Q120,50 166,74" />
+  <g>
+    <ellipse class="navy" cx="36" cy="55" rx="15" ry="6.5" />
+    <ellipse class="navy" cx="68" cy="55" rx="15" ry="6.5" />
+    <circle class="navy" cx="52" cy="55" r="6" />
+  </g>
+  <g>
+    <ellipse class="navy" cx="172" cy="55" rx="15" ry="6.5" />
+    <ellipse class="navy" cx="204" cy="55" rx="15" ry="6.5" />
+    <circle class="navy" cx="188" cy="55" r="6" />
+  </g>
+  <rect class="navy" x="98" y="98" width="44" height="30" rx="9" />
+  <circle class="navy" cx="120" cy="115" r="12" />
+  <circle cx="120" cy="115" r="6.5" fill="#ffffff" />
+  <circle class="navy" cx="120" cy="115" r="2.6" />
+  <path class="leafLight" d="M120,192 C92,182 68,158 74,120 C104,132 122,158 120,192 Z" />
+  <path class="leafDark" d="M120,192 C148,182 172,158 166,120 C136,132 118,158 120,192 Z" />
+  <path fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.85" d="M114,184 C100,166 88,146 83,128" />
+  <path fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.55" d="M126,184 C140,166 152,146 157,128" />
+</svg>

@@ -4,13 +4,14 @@ import threading
 from pathlib import Path
 
 from django.core.files import File
+from django.core.files.base import ContentFile
 from django.http import FileResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from . import exif, ml, weather
+from . import exif, llm, ml, report_pdf, weather
 from .models import ImageAnalysis
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,14 @@ def _process_analysis(analysis_id):
         # Best-effort weather enrichment (feature 2). Never fails the analysis.
         _attach_weather(analysis, update_fields)
 
+        # Upgrade the templated report to an LLM-written one when a key is set.
+        # Best-effort: on any failure we keep the template report.
+        _attach_llm_report(analysis, crop_health)
+
+        # Render the downloadable PDF report. Best-effort — a PDF failure must
+        # not fail the analysis itself.
+        _attach_pdf(analysis, crop_health, update_fields)
+
         analysis.status = ImageAnalysis.Status.DONE
         analysis.save(update_fields=update_fields)
     except Exception as exc:  # noqa: BLE001 - always record failure on the row
@@ -78,6 +87,58 @@ def _attach_weather(analysis, update_fields):
             update_fields.append('weather')
     except Exception as exc:  # noqa: BLE001
         logger.warning('Weather enrichment failed for %s: %s', analysis.id, exc)
+
+
+def _attach_llm_report(analysis, crop_health):
+    """
+    Replace the templated report with an LLM-written detailed one when
+    GEMINI_API_KEY is configured. The vision verdict (crop_health) stays
+    authoritative; the LLM only narrates. Best-effort: keeps the template on
+    any failure. ``report`` is already in the caller's update_fields.
+    """
+    try:
+        detections = (analysis.report or {}).get('detections') or []
+        location = analysis.location_name
+        if not location and analysis.latitude is not None and analysis.longitude is not None:
+            location = f'{analysis.latitude:.4f}, {analysis.longitude:.4f}'
+        captured = analysis.captured_at.isoformat() if analysis.captured_at else None
+
+        llm_report = llm.generate_report(
+            crop_health=crop_health,
+            detections=detections,
+            weather=analysis.weather,
+            location=location,
+            captured_at=captured,
+        )
+        if llm_report:
+            analysis.report = llm_report
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('LLM report generation failed for %s: %s', analysis.id, exc)
+
+
+def _attach_pdf(analysis, crop_health, update_fields):
+    """Render and store the downloadable PDF report. Best-effort."""
+    try:
+        annotated_path = (
+            analysis.annotated_image.path if analysis.annotated_image else None
+        )
+        pdf_bytes = report_pdf.build_report_pdf(
+            analysis_id=str(analysis.id),
+            crop_health=crop_health,
+            report=analysis.report,
+            annotated_image_path=annotated_path,
+            weather=analysis.weather,
+            captured_at=analysis.captured_at.isoformat() if analysis.captured_at else None,
+            location_name=analysis.location_name,
+            latitude=analysis.latitude,
+            longitude=analysis.longitude,
+        )
+        analysis.report_pdf.save(
+            f'report_{analysis.id}.pdf', ContentFile(pdf_bytes), save=False
+        )
+        update_fields.append('report_pdf')
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('PDF report generation failed for %s: %s', analysis.id, exc)
 
 
 def _parse_captured_at(raw):
@@ -148,11 +209,12 @@ def analysis_status(request, analysis_id):
     data = {
         'id': str(analysis.id),
         'status': analysis.status,
-        'image_url': request.build_absolute_uri(analysis.image.url) if analysis.image else None,
+        # Relative URLs so the browser fetches same-origin (through the Vite dev
+        # proxy / nginx in prod). Absolute URLs would point straight at the
+        # backend host and trip CORS.
+        'image_url': analysis.image.url if analysis.image else None,
         'annotated_image_url': (
-            request.build_absolute_uri(analysis.annotated_image.url)
-            if analysis.annotated_image
-            else None
+            analysis.annotated_image.url if analysis.annotated_image else None
         ),
         'captured_at': analysis.captured_at.isoformat() if analysis.captured_at else None,
         'latitude': analysis.latitude,
@@ -164,10 +226,33 @@ def analysis_status(request, analysis_id):
     if analysis.status == ImageAnalysis.Status.DONE:
         data['report'] = analysis.report
         data['crop_health'] = analysis.crop_health
+        data['report_pdf_url'] = (
+            f'/api/analyze/{analysis.id}/report.pdf' if analysis.report_pdf else None
+        )
     elif analysis.status == ImageAnalysis.Status.FAILED:
         data['error'] = analysis.error
 
     return JsonResponse(data)
+
+
+@require_http_methods(['GET'])
+def analysis_report_pdf(request, analysis_id):
+    """Stream the generated PDF report for download."""
+    try:
+        analysis = ImageAnalysis.objects.get(id=analysis_id)
+    except ImageAnalysis.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if not analysis.report_pdf:
+        return JsonResponse({'error': 'Report not ready'}, status=404)
+
+    response = FileResponse(
+        analysis.report_pdf.open('rb'), content_type='application/pdf'
+    )
+    response['Content-Disposition'] = (
+        f'attachment; filename="aircrop-report-{analysis.id}.pdf"'
+    )
+    return response
 
 
 def _sample_files():
@@ -183,7 +268,7 @@ def list_samples(request):
     samples = [
         {
             'id': p.stem,
-            'image_url': request.build_absolute_uri(f'/api/samples/{p.stem}/image/'),
+            'image_url': f'/api/samples/{p.stem}/image/',
         }
         for p in _sample_files()
     ]

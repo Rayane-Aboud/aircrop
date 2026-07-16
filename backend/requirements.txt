@@ -7,6 +7,9 @@ Pillow==11.1.0
 psycopg2-binary==2.9.12
 sqlparse==0.5.5
 
+# PDF report generation (api/report_pdf.py)
+reportlab==4.2.5
+
 # Crop-health YOLO model (api/ml.py). Pinned to the version the
 # checkpoint (api/ml_models/crop_health/best.pt) was trained/exported with.
 ultralytics==8.3.203

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAnalysisStatus, getSamples, sampleToFile, uploadImage } from './api'
 import type { AnalysisResult, PhotoMeta, Sample } from './api'
+import logo from './assets/aircrop-logo.svg'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -133,8 +134,15 @@ function App() {
   const displayImage = result?.annotated_image_url ?? preview
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold text-slate-800">Crop Health Check</h1>
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 sm:gap-6 p-4 sm:p-6">
+      <header className="flex flex-col items-center gap-1 w-full">
+        <img
+          src={logo}
+          alt="Aircrop"
+          className="h-16 w-auto max-w-[70vw] sm:h-20 md:h-24"
+        />
+        <p className="text-xs sm:text-sm text-slate-500 text-center">Crop Health Check</p>
+      </header>
 
       <div
         onDragOver={(e) => {
@@ -246,12 +254,31 @@ function App() {
             {' · '}
             {result.crop_health.healthy_regions} healthy / {result.crop_health.stressed_regions} stressed region(s)
           </p>
+          {result.report.severity && (
+            <p className="mb-2 text-sm font-medium text-slate-600">
+              Severity: <span className="capitalize">{result.report.severity}</span>
+            </p>
+          )}
           <p className="text-slate-700 mb-3">{result.report.summary}</p>
+
+          {result.report.detailed_findings && (
+            <p className="mb-3 whitespace-pre-line text-sm text-slate-600">
+              {result.report.detailed_findings}
+            </p>
+          )}
+
+          <p className="mb-1 text-sm font-medium text-slate-700">Recommendations</p>
           <ul className="list-disc list-inside text-slate-600 text-sm mb-3">
             {result.report.recommendations.map((rec) => (
               <li key={rec}>{rec}</li>
             ))}
           </ul>
+
+          {result.report.confidence_note && (
+            <p className="mb-3 text-xs italic text-slate-400">
+              {result.report.confidence_note}
+            </p>
+          )}
 
           {(result.captured_at || result.location_name || result.latitude != null) && (
             <div className="mb-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
@@ -287,6 +314,17 @@ function App() {
                 )}
               </div>
             </div>
+          )}
+
+          {result.report_pdf_url && (
+            <a
+              href={result.report_pdf_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 mb-1 inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              ⬇ Download PDF report
+            </a>
           )}
 
           {result.report.source === 'dummy' && (
