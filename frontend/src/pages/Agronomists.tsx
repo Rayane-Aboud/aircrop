@@ -42,64 +42,65 @@ export default function Agronomists() {
     }
   }
 
-  const inputCls =
-    'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none'
-
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold text-slate-800">Agronomists</h1>
-        <p className="text-sm text-slate-500">Provision and oversee agronomist accounts.</p>
+        <p className="eyebrow">Administration</p>
+        <h1 className="text-xl font-semibold" style={{ color: 'var(--text)' }}>
+          Agronomists
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          Provision and oversee agronomist accounts.
+        </p>
       </div>
 
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
       <section className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">All agronomists</h2>
+        <div className="panel p-5">
+          <p className="eyebrow mb-3">All agronomists</p>
           {agronomists.length === 0 ? (
-            <p className="text-sm text-slate-400">None yet.</p>
+            <p className="text-sm" style={{ color: 'var(--faint)' }}>
+              None yet.
+            </p>
           ) : (
-            <ul className="divide-y divide-slate-100 text-sm">
+            <ul className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
               {agronomists.map((a) => (
                 <li key={a.id} className="flex justify-between py-2">
-                  <span className="text-slate-700">{a.display_name}</span>
-                  <span className="text-slate-400">@{a.username}</span>
+                  <span style={{ color: 'var(--text)' }}>{a.display_name}</span>
+                  <span style={{ color: 'var(--faint)' }}>@{a.username}</span>
                 </li>
               ))}
             </ul>
           )}
         </div>
 
-        <form onSubmit={add} className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">Add an agronomist</h2>
-          <label className="block text-xs text-slate-500">
+        <form onSubmit={add} className="panel p-5">
+          <p className="eyebrow mb-3">Add an agronomist</p>
+          <label className="field-label">
             Full name
-            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} required />
+            <input value={name} onChange={(e) => setName(e.target.value)} className="input" required />
           </label>
-          <label className="mt-3 block text-xs text-slate-500">
+          <label className="field-label mt-3">
             Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputCls} required />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} className="input" required />
           </label>
-          <label className="mt-3 block text-xs text-slate-500">
+          <label className="field-label mt-3">
             Email
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
           </label>
-          <label className="mt-3 block text-xs text-slate-500">
+          <label className="field-label mt-3">
             Temporary password
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={inputCls}
+              className="input"
               minLength={6}
               required
             />
           </label>
-          <button
-            type="submit"
-            className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
+          <button type="submit" className="btn-primary mt-4 w-full">
             Add agronomist
           </button>
         </form>

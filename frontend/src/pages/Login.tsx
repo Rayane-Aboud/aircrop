@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useAuth } from '../auth'
-import logo from '../assets/aircrop-logo.svg'
 
 export default function Login() {
   const { login } = useAuth()
@@ -24,15 +23,25 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
+    <div className="cad-grid flex min-h-screen items-center justify-center p-4">
+      <div className="panel w-full max-w-sm p-8">
         <div className="mb-6 flex flex-col items-center gap-2">
-          <img src={logo} alt="Aircrop" className="h-14 w-auto" />
-          <p className="text-sm text-slate-500">Crop Health Platform</p>
+          <span
+            className="flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold"
+            style={{ background: 'var(--green)', color: '#06130c' }}
+          >
+            A
+          </span>
+          <span className="text-lg font-bold tracking-[0.2em]" style={{ color: 'var(--text)' }}>
+            AIRCROP
+          </span>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            Crop Health Platform
+          </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <label className="block text-sm text-slate-600">
+          <label className="field-label">
             Username
             <input
               type="text"
@@ -40,10 +49,10 @@ export default function Login() {
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
               required
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none"
+              className="input"
             />
           </label>
-          <label className="block text-sm text-slate-600">
+          <label className="field-label">
             Password
             <input
               type="password"
@@ -51,17 +60,17 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
               required
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none"
+              className="input"
             />
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <p className="text-sm" style={{ color: 'var(--danger)' }}>
+              {error}
+            </p>
+          )}
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-          >
+          <button type="submit" disabled={busy} className="btn-primary w-full">
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>

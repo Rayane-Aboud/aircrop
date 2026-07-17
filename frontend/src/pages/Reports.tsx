@@ -3,10 +3,10 @@ import { downloadReportPdf, listReports } from '../api'
 import type { ReportRow } from '../api'
 import { useAuth } from '../auth'
 
-const VERDICT_STYLE: Record<string, string> = {
-  healthy: 'bg-emerald-50 text-emerald-700',
-  stressed: 'bg-amber-50 text-amber-700',
-  no_detection: 'bg-slate-100 text-slate-500',
+const VERDICT_PILL: Record<string, string> = {
+  healthy: 'pill pill-green',
+  stressed: 'pill pill-warn',
+  no_detection: 'pill',
 }
 
 export default function Reports() {
@@ -35,62 +35,65 @@ export default function Reports() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
-        <p className="text-sm text-slate-500">Generated crop-health reports.</p>
+        <p className="eyebrow">Archive</p>
+        <h1 className="text-xl font-semibold" style={{ color: 'var(--text)' }}>
+          {title}
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          Generated crop-health reports.
+        </p>
       </div>
 
-      {loading && <p className="text-slate-500">Loading…</p>}
-      {error && <p className="text-red-600">{error}</p>}
+      {loading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
       {!loading && !error && rows.length === 0 && (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <p className="panel p-6 text-sm" style={{ color: 'var(--muted)' }}>
           No reports yet.
         </p>
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="panel overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-              <tr>
-                {user?.role !== 'farmer' && <th className="px-4 py-3">Land</th>}
-                <th className="px-4 py-3">Verdict</th>
-                <th className="px-4 py-3">Generated</th>
-                <th className="px-4 py-3 text-right">Report</th>
+            <thead style={{ background: 'var(--bg-2)' }}>
+              <tr className="text-left" style={{ color: 'var(--faint)' }}>
+                {user?.role !== 'farmer' && <th className="px-4 py-3 text-xs uppercase">Land</th>}
+                <th className="px-4 py-3 text-xs uppercase">Verdict</th>
+                <th className="px-4 py-3 text-xs uppercase">Generated</th>
+                <th className="px-4 py-3 text-right text-xs uppercase">Report</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
+                <tr key={row.id} style={{ borderTop: '1px solid var(--border)' }}>
                   {user?.role !== 'farmer' && (
-                    <td className="px-4 py-3 text-slate-700">{row.land_name ?? '—'}</td>
+                    <td className="px-4 py-3" style={{ color: 'var(--text)' }}>
+                      {row.land_name ?? '—'}
+                    </td>
                   )}
                   <td className="px-4 py-3">
                     {row.crop_health ? (
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                          VERDICT_STYLE[row.crop_health.status] ?? 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
+                      <span className={VERDICT_PILL[row.crop_health.status] ?? 'pill'}>
                         {row.crop_health.status.replace('_', ' ')}
                       </span>
                     ) : (
-                      <span className="text-xs text-slate-400">{row.status_label}</span>
+                      <span className="text-xs" style={{ color: 'var(--faint)' }}>
+                        {row.status_label}
+                      </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">
+                  <td className="px-4 py-3" style={{ color: 'var(--muted)' }}>
                     {new Date(row.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {row.report_pdf_url ? (
-                      <button
-                        type="button"
-                        onClick={() => download(row)}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                      >
+                      <button type="button" onClick={() => download(row)} className="btn-ghost text-xs">
                         ⬇ PDF
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs" style={{ color: 'var(--faint)' }}>
+                        —
+                      </span>
                     )}
                   </td>
                 </tr>

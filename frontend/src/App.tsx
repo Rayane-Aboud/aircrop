@@ -3,15 +3,16 @@ import type { Role } from './api'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
 import Agronomists from './pages/Agronomists'
-import Analyze from './pages/Analyze'
-import Farmers from './pages/Farmers'
+import LandDetail from './pages/LandDetail'
 import Login from './pages/Login'
+import ProjectDetail from './pages/ProjectDetail'
+import Projects from './pages/Projects'
 import Reports from './pages/Reports'
 
 // Where each role lands after login.
 const HOME: Record<Role, string> = {
   super_admin: '/agronomists',
-  agronomist: '/analyze',
+  agronomist: '/projects',
   farmer: '/reports',
 }
 
@@ -20,7 +21,10 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-400">
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ background: 'var(--bg)', color: 'var(--muted)' }}
+      >
         Loading…
       </div>
     )
@@ -36,11 +40,12 @@ function App() {
         {/* Shared */}
         <Route path="/reports" element={<Reports />} />
 
-        {/* Agronomist */}
+        {/* Agronomist — projects (farmers) → lands → analysis */}
         {user.role === 'agronomist' && (
           <>
-            <Route path="/analyze" element={<Analyze />} />
-            <Route path="/farmers" element={<Farmers />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:farmerId" element={<ProjectDetail />} />
+            <Route path="/projects/:farmerId/lands/:landId" element={<LandDetail />} />
           </>
         )}
 

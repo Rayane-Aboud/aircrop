@@ -1,1 +1,163 @@
 @import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/*  AIRCROP — AutoCAD-inspired dark theme                             */
+/*  Classical dark grey canvas · professional green · white type      */
+/* ------------------------------------------------------------------ */
+:root {
+  --bg:        #23282d; /* main canvas — classic CAD dark grey        */
+  --bg-2:      #1c2024; /* deeper wells (sidebar, drop zones)         */
+  --panel:     #2a3036; /* raised panels / cards                      */
+  --panel-2:   #30373e; /* hover / active panel                       */
+  --border:    #3a424a; /* hairline borders                           */
+  --border-2:  #4a545e; /* stronger borders / focus                   */
+  --grid:      rgba(255, 255, 255, 0.035); /* faint drafting grid     */
+
+  --green:      #2ea86a; /* professional green — primary accent       */
+  --green-hi:   #35c07f; /* hover                                     */
+  --green-dim:  rgba(46, 168, 106, 0.14);
+  --green-line: rgba(46, 168, 106, 0.45);
+
+  --text:      #e8eaed; /* white-ish primary                          */
+  --muted:     #9aa4ad; /* secondary                                  */
+  --faint:     #6b757d; /* tertiary / placeholders                    */
+
+  --danger:    #e5534b;
+  --warn:      #d99b3f;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Faint AutoCAD drafting grid — used on the working canvas. */
+.cad-grid {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reusable component classes                                        */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+  }
+
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  /* Buttons -------------------------------------------------------- */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: var(--green);
+    color: #06130c;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0.55rem 1rem;
+    border-radius: 0.4rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, opacity 0.15s ease;
+  }
+  .btn-primary:hover { background: var(--green-hi); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: transparent;
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--border-2);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .btn-ghost:hover { background: var(--panel-2); border-color: var(--green-line); }
+
+  /* Form fields --------------------------------------------------- */
+  .field-label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .input {
+    margin-top: 0.3rem;
+    width: 100%;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.875rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .input::placeholder { color: var(--faint); }
+  .input:focus { border-color: var(--green); }
+
+  /* Selectable cards (replace dropdowns) -------------------------- */
+  .card-select {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
+  }
+  .card-select:hover {
+    border-color: var(--green-line);
+    background: var(--panel-2);
+  }
+  .card-select:active { transform: translateY(1px); }
+  .card-select[data-active="true"] {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green) inset;
+  }
+
+  /* Small status pills -------------------------------------------- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-2);
+    color: var(--muted);
+  }
+  .pill-green { color: var(--green-hi); border-color: var(--green-line); background: var(--green-dim); }
+  .pill-warn  { color: var(--warn);  border-color: rgba(217,155,63,0.4); }
+  .pill-danger{ color: var(--danger); border-color: rgba(229,83,75,0.4); }
+}
