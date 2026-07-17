@@ -218,6 +218,7 @@ def build_report_pdf(
     crop_health,
     report,
     annotated_image_path=None,
+    images=None,
     weather=None,
     captured_at=None,
     location_name=None,
@@ -246,9 +247,11 @@ def build_report_pdf(
 
     # --- Title ---
     story.append(Paragraph('Crop Health Analysis Report', styles['ReportTitle']))
-    story.append(Paragraph(
-        f'Analysis reference: {analysis_id}', styles['Sub'],
-    ))
+    n_images = len(images) if images else 0
+    ref_line = f'Analysis reference: {analysis_id}'
+    if n_images > 1:
+        ref_line += f' &nbsp;&bull;&nbsp; Drone survey of {n_images} images'
+    story.append(Paragraph(ref_line, styles['Sub']))
 
     # --- Verdict banner ---
     status = (crop_health or {}).get('status', 'unknown')
@@ -282,8 +285,14 @@ def build_report_pdf(
         story.append(Paragraph('Weather on capture date', styles['H2']))
         story.append(Paragraph(_weather_line(weather), styles['Body']))
 
-    # --- Annotated image ---
-    if annotated_image_path:
+    # --- Annotated imagery ---
+    # For a multi-image survey, show a per-image breakdown; for a single image,
+    # show the one annotated hero as before.
+    if images and len(images) > 1:
+        story.append(Paragraph('Per-Image Breakdown', styles['H2']))
+        for i, im in enumerate(images, start=1):
+            _append_image_breakdown(story, styles, i, im)
+    elif annotated_image_path:
         try:
             img = _fit_image(str(annotated_image_path), max_w=15 * cm, max_h=10 * cm)
             story.append(Paragraph('Annotated Image', styles['H2']))
@@ -339,6 +348,32 @@ def build_report_pdf(
 
     doc.build(story)
     return buf.getvalue()
+
+
+def _append_image_breakdown(story, styles, index, im):
+    """Render one image's annotated thumbnail + its per-image verdict caption."""
+    ch = im.get('crop_health') or {}
+    status = ch.get('status', 'unknown')
+    label = _STATUS_LABEL.get(status, status)
+    conf = ch.get('confidence', 0) or 0
+    dets = im.get('detections') or []
+    n_stressed = sum(1 for d in dets if d.get('class_name') == 'stressed')
+    n_healthy = sum(1 for d in dets if d.get('class_name') == 'healthy')
+
+    caption = (
+        f'<b>Image {index}:</b> {label} &nbsp;&bull;&nbsp; '
+        f'{conf * 100:.0f}% confidence &nbsp;&bull;&nbsp; '
+        f'{len(dets)} detection(s) ({n_healthy} healthy / {n_stressed} stressed)'
+    )
+    story.append(Paragraph(caption, styles['Body']))
+
+    path = im.get('annotated_image_path') or im.get('image_path')
+    if path:
+        try:
+            story.append(_fit_image(str(path), max_w=12 * cm, max_h=7.5 * cm))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Could not embed survey image %s: %s', index, exc)
+    story.append(Spacer(1, 8))
 
 
 def _context_lines(captured_at, location_name, latitude, longitude):

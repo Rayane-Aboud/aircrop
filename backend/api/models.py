@@ -46,7 +46,15 @@ class Land(models.Model):
 
 
 class ImageAnalysis(models.Model):
-    """A single crop-health analysis and its generated report."""
+    """
+    A crop-health *survey* and its generated report.
+
+    A survey groups one or more drone images (see ``AnalysisImage``). The
+    per-image YOLO detections are aggregated into this row's ``crop_health``
+    and ``report`` (the overall verdict) plus a single PDF. The ``image`` /
+    ``annotated_image`` fields hold the *primary* (first) image so older code,
+    thumbnails and single-image reports keep working unchanged.
+    """
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
@@ -99,3 +107,34 @@ class ImageAnalysis(models.Model):
 
     def __str__(self):
         return f'{self.id} ({self.status})'
+
+
+class AnalysisImage(models.Model):
+    """
+    One drone image belonging to a survey (``ImageAnalysis``).
+
+    Each image is run through YOLO independently; its ``detections`` and
+    per-image ``crop_health`` are stored here, then aggregated up onto the
+    parent survey. ``order`` preserves upload order (0 = primary image).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    analysis = models.ForeignKey(
+        ImageAnalysis,
+        on_delete=models.CASCADE,
+        related_name='images',
+    )
+    image = models.ImageField(upload_to='crop_images/%Y/%m/%d/')
+    annotated_image = models.ImageField(
+        upload_to='crop_annotated/%Y/%m/%d/', null=True, blank=True
+    )
+    detections = models.JSONField(null=True, blank=True)
+    crop_health = models.JSONField(null=True, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.analysis_id} · image {self.order}'

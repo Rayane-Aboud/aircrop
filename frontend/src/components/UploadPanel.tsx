@@ -1,21 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getAnalysisStatus, getSamples, sampleToFile, uploadImage } from '../api'
+import { getAnalysisStatus, getSamples, sampleToFile, uploadImages } from '../api'
 import type { AnalysisResult, PhotoMeta, Sample } from '../api'
 import ResultCard from './ResultCard'
 
 const POLL_INTERVAL_MS = 2000
 
+interface Selected {
+  file: File
+  preview: string
+  key: string
+}
+
 /**
- * Self-contained analysis panel for a single land.
- * The land is fixed by the `landId` prop — no land selection here.
+ * Multi-image analysis panel for a single land. Drone surveys usually produce
+ * several shots, so images accumulate into one selection and are analyzed
+ * together as a single report. The land is fixed by the `landId` prop.
  */
 export default function UploadPanel({ landId, onDone }: { landId: string; onDone?: () => void }) {
   const [isDragging, setIsDragging] = useState(false)
-  const [preview, setPreview] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Selected[]>([])
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [samples, setSamples] = useState<Sample[]>([])
-  const [loadingSampleId, setLoadingSampleId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const pollRef = useRef<number | null>(null)
 
   const [capturedAt, setCapturedAt] = useState('')
@@ -37,6 +44,41 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
 
   useEffect(() => stopPolling, [stopPolling])
 
+  const addFiles = useCallback((files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) {
+      setError('Please add image files.')
+      return
+    }
+    setError(null)
+    setResult(null)
+    setSelected((prev) => [
+      ...prev,
+      ...images.map((file) => ({
+        file,
+        preview: URL.createObjectURL(file),
+        key: `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`,
+      })),
+    ])
+  }, [])
+
+  const removeAt = useCallback((key: string) => {
+    setSelected((prev) => {
+      const gone = prev.find((s) => s.key === key)
+      if (gone) URL.revokeObjectURL(gone.preview)
+      return prev.filter((s) => s.key !== key)
+    })
+  }, [])
+
+  const clearAll = useCallback(() => {
+    setSelected((prev) => {
+      prev.forEach((s) => URL.revokeObjectURL(s.preview))
+      return []
+    })
+    setResult(null)
+    setError(null)
+  }, [])
+
   const startPolling = useCallback(
     (id: string) => {
       stopPolling()
@@ -46,69 +88,66 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
             setResult(data)
             if (data.status === 'done' || data.status === 'failed') {
               stopPolling()
+              setBusy(false)
               if (data.status === 'done') onDone?.()
             }
           })
           .catch((err: unknown) => {
             setError(err instanceof Error ? err.message : 'Failed to check status')
             stopPolling()
+            setBusy(false)
           })
       }, POLL_INTERVAL_MS)
     },
     [stopPolling, onDone],
   )
 
-  const handleFile = useCallback(
-    (file: File) => {
-      if (!file.type.startsWith('image/')) {
-        setError('Please drop an image file.')
-        return
-      }
-      setError(null)
-      setResult(null)
-      setPreview(URL.createObjectURL(file))
-
-      uploadImage(file, landId, metaRef.current)
-        .then((initial) => {
-          setResult(initial)
-          startPolling(initial.id)
-        })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Upload failed'))
-    },
-    [landId, startPolling],
-  )
-
-  const handleSampleClick = useCallback(
-    (sample: Sample) => {
-      setLoadingSampleId(sample.id)
-      sampleToFile(sample)
-        .then(handleFile)
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load sample'))
-        .finally(() => setLoadingSampleId(null))
-    },
-    [handleFile],
-  )
+  const analyze = useCallback(() => {
+    if (selected.length === 0) {
+      setError('Add at least one image first.')
+      return
+    }
+    setError(null)
+    setResult(null)
+    setBusy(true)
+    uploadImages(selected.map((s) => s.file), landId, metaRef.current)
+      .then((initial) => {
+        setResult(initial)
+        startPolling(initial.id)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Upload failed')
+        setBusy(false)
+      })
+  }, [selected, landId, startPolling])
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
       setIsDragging(false)
-      const file = e.dataTransfer.files?.[0]
-      if (file) handleFile(file)
+      addFiles(Array.from(e.dataTransfer.files ?? []))
     },
-    [handleFile],
+    [addFiles],
   )
 
   const onSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) handleFile(file)
+      addFiles(Array.from(e.target.files ?? []))
+      e.target.value = '' // allow re-selecting the same file
     },
-    [handleFile],
+    [addFiles],
   )
 
-  const isProcessing = result?.status === 'pending' || result?.status === 'processing'
-  const displayImage = result?.annotated_image_url ?? preview
+  const addSample = useCallback(
+    (sample: Sample) => {
+      sampleToFile(sample)
+        .then((file) => addFiles([file]))
+        .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load sample'))
+    },
+    [addFiles],
+  )
+
+  const isProcessing = busy || result?.status === 'pending' || result?.status === 'processing'
 
   return (
     <div className="space-y-4">
@@ -120,18 +159,54 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         onClick={() => document.getElementById('file-input')?.click()}
-        className="cursor-pointer rounded-lg border-2 border-dashed p-10 text-center transition-colors"
+        className="cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors"
         style={{
           borderColor: isDragging ? 'var(--green)' : 'var(--border-2)',
           background: isDragging ? 'var(--green-dim)' : 'var(--bg-2)',
         }}
       >
-        {displayImage && (
-          <img src={displayImage} alt="Preview" className="mx-auto mb-4 max-h-56 rounded-lg object-contain" />
-        )}
-        <p style={{ color: 'var(--muted)' }}>Drop a crop image here, or click to select one</p>
-        <input id="file-input" type="file" accept="image/*" className="hidden" onChange={onSelect} />
+        <p style={{ color: 'var(--muted)' }}>Drop drone images here, or click to select</p>
+        <p className="mt-1 text-xs" style={{ color: 'var(--faint)' }}>
+          Add as many as you like — they’re analyzed together as one report.
+        </p>
+        <input
+          id="file-input"
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={onSelect}
+        />
       </div>
+
+      {selected.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="eyebrow">
+              {selected.length} image{selected.length > 1 ? 's' : ''} selected
+            </span>
+            <button type="button" onClick={clearAll} className="text-xs" style={{ color: 'var(--faint)' }}>
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {selected.map((s) => (
+              <div key={s.key} className="relative h-16 w-16 overflow-hidden rounded-lg" style={{ border: '1px solid var(--border)' }}>
+                <img src={s.preview} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeAt(s.key)}
+                  className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center text-xs"
+                  style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}
+                  aria-label="Remove image"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <label className="field-label max-w-sm">
         Date &amp; time taken (optional)
@@ -146,20 +221,15 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
       {samples.length > 0 && (
         <div>
           <p className="mb-2 text-sm" style={{ color: 'var(--muted)' }}>
-            Or try a sample:
+            Or add a sample:
           </p>
           <div className="flex gap-3">
             {samples.map((sample) => (
               <button
                 key={sample.id}
                 type="button"
-                onClick={() => handleSampleClick(sample)}
-                disabled={loadingSampleId !== null}
-                className="h-16 w-16 overflow-hidden rounded-lg border-2 transition-opacity disabled:opacity-40"
-                style={{
-                  borderColor: loadingSampleId === sample.id ? 'var(--green)' : 'transparent',
-                  opacity: loadingSampleId === sample.id ? 0.5 : 1,
-                }}
+                onClick={() => addSample(sample)}
+                className="h-16 w-16 overflow-hidden rounded-lg border-2 border-transparent transition-opacity hover:opacity-80"
               >
                 <img src={sample.image_url} alt={sample.id} className="h-full w-full object-cover" />
               </button>
@@ -168,10 +238,16 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
         </div>
       )}
 
+      <button type="button" onClick={analyze} disabled={selected.length === 0 || busy} className="btn-primary">
+        {busy
+          ? 'Analyzing…'
+          : `Analyze ${selected.length || ''} image${selected.length === 1 ? '' : 's'}`.trim()}
+      </button>
+
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
-      {isProcessing && (
+      {isProcessing && !error && (
         <p className="animate-pulse" style={{ color: 'var(--muted)' }}>
-          Analyzing image…
+          Analyzing survey…
         </p>
       )}
       {result?.status === 'done' && <ResultCard result={result} />}

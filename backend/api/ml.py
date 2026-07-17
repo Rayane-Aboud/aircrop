@@ -106,6 +106,16 @@ def dummy_analysis():
     return report, crop_health
 
 
+def summarize_health(detections):
+    """Public alias — aggregate a flat list of detections into a verdict."""
+    return _summarize_health(detections)
+
+
+def build_report(crop_health, detections, source='yolo'):
+    """Public alias — build the templated report dict from a verdict."""
+    return _build_report(crop_health, detections, source)
+
+
 def _summarize_health(detections):
     if not detections:
         return {

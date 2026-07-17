@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from accounts.permissions import IsAgronomistOrSuperAdmin
 
 from . import exif, pipeline
-from .models import ImageAnalysis, Land
+from .models import AnalysisImage, ImageAnalysis, Land
 from .serializers import LandSerializer, ReportListSerializer
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,16 @@ def _parse_float(raw):
 
 
 def _analysis_payload(analysis):
+    images = [
+        {
+            'id': str(ai.id),
+            'image_url': ai.image.url if ai.image else None,
+            'annotated_image_url': ai.annotated_image.url if ai.annotated_image else None,
+            'crop_health': ai.crop_health,
+            'detections': ai.detections or [],
+        }
+        for ai in analysis.images.all()
+    ]
     data = {
         'id': str(analysis.id),
         'status': analysis.status,
@@ -120,6 +130,8 @@ def _analysis_payload(analysis):
         'annotated_image_url': (
             analysis.annotated_image.url if analysis.annotated_image else None
         ),
+        'images': images,
+        'image_count': len(images) or (1 if analysis.image else 0),
         'captured_at': analysis.captured_at.isoformat() if analysis.captured_at else None,
         'latitude': analysis.latitude,
         'longitude': analysis.longitude,
@@ -140,10 +152,15 @@ def _analysis_payload(analysis):
 @api_view(['POST'])
 @permission_classes([IsAgronomistOrSuperAdmin])
 def analyze_image(request):
-    image = request.FILES.get('image')
-    if not image:
+    # Accept a multi-image survey (field "images") or a single image (field
+    # "image", kept for backward compatibility). All images belong to one report.
+    files = request.FILES.getlist('images') or request.FILES.getlist('image')
+    if not files:
+        single = request.FILES.get('image')
+        files = [single] if single else []
+    if not files:
         return Response(
-            {'error': 'No image file provided (expected multipart field "image").'},
+            {'error': 'No image files provided (expected multipart field "images").'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -159,9 +176,20 @@ def analyze_image(request):
     except Land.DoesNotExist:
         return Response({'error': 'Land not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+    # The survey. Its `image` field holds the primary (first) shot for
+    # thumbnails; every shot also becomes an AnalysisImage row for per-image
+    # analysis and aggregation.
     analysis = ImageAnalysis.objects.create(
-        image=image, land=land, created_by=request.user
+        image=files[0], land=land, created_by=request.user
     )
+    for idx, f in enumerate(files):
+        ai = AnalysisImage(analysis=analysis, order=idx)
+        if idx == 0:
+            # Reuse the file already stored on the survey (no re-upload).
+            ai.image.name = analysis.image.name
+        else:
+            ai.image = f
+        ai.save()
 
     # Date & location: EXIF first, then manual overrides, then the land's own
     # coordinates as a final fallback so weather still resolves.

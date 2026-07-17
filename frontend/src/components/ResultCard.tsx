@@ -17,6 +17,8 @@ const STATUS_VAR: Record<string, string> = {
 export default function ResultCard({ result }: { result: AnalysisResult }) {
   if (result.status !== 'done' || !result.report || !result.crop_health) return null
   const { crop_health, report, weather } = result
+  const images = result.images ?? []
+  const multiImage = images.length > 1
 
   const onDownload = () => {
     if (result.report_pdf_url) {
@@ -67,6 +69,57 @@ export default function ResultCard({ result }: { result: AnalysisResult }) {
         <p className="mb-3 text-xs italic" style={{ color: 'var(--faint)' }}>
           {report.confidence_note}
         </p>
+      )}
+
+      {multiImage && (
+        <div className="mb-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="eyebrow">Per-image breakdown</span>
+            <span className="text-xs" style={{ color: 'var(--faint)' }}>
+              {images.length} images in this survey
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {images.map((im, i) => {
+              const st = im.crop_health?.status ?? 'no_detection'
+              const src = im.annotated_image_url ?? im.image_url ?? undefined
+              return (
+                <div
+                  key={im.id}
+                  className="overflow-hidden rounded-lg"
+                  style={{ border: '1px solid var(--border)', background: 'var(--panel-2)' }}
+                >
+                  <div className="relative aspect-square w-full">
+                    {src ? (
+                      <img src={src} alt={`Image ${i + 1}`} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs" style={{ color: 'var(--faint)' }}>
+                        no preview
+                      </div>
+                    )}
+                    <span
+                      className="pill absolute left-1 top-1"
+                      style={{ background: 'rgba(0,0,0,0.65)', color: STATUS_VAR[st] ?? 'var(--text)' }}
+                    >
+                      {STATUS_LABEL[st] ?? st}
+                    </span>
+                  </div>
+                  <div className="px-2 py-1.5 text-xs" style={{ color: 'var(--muted)' }}>
+                    <span style={{ color: 'var(--text)' }}>Image {i + 1}</span>
+                    {im.crop_health && (
+                      <>
+                        {' · '}
+                        {(im.crop_health.confidence * 100).toFixed(0)}%
+                      </>
+                    )}
+                    {' · '}
+                    {im.detections.length} detection{im.detections.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {(result.captured_at || result.location_name || result.latitude != null) && (

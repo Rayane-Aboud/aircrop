@@ -6,13 +6,31 @@ agronomists only see their own farmers/lands/reports, and report visibility
 is scoped by ownership.
 """
 
+import io
+from unittest import mock
+
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
 from accounts.models import Role
-from api.models import ImageAnalysis, Land
+from api import ml
+from api.models import AnalysisImage, ImageAnalysis, Land
 
 User = get_user_model()
+
+
+def _png_bytes(color=(0, 128, 0)):
+    """A tiny valid PNG so ImageField validation passes."""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new('RGB', (8, 8), color).save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def _upload(name, color=(0, 128, 0)):
+    return SimpleUploadedFile(name, _png_bytes(color), content_type='image/png')
 
 
 class RoleScopingTests(APITestCase):
@@ -122,3 +140,90 @@ class RoleScopingTests(APITestCase):
         self.assertEqual(
             self.client.get(f'/api/analyze/{self.report2.id}/').status_code, 404
         )
+
+
+class MultiImageUploadTests(APITestCase):
+    """A drone survey = several images uploaded together as one report."""
+
+    def setUp(self):
+        self.agro = User.objects.create_user('agro', password='pw', role=Role.AGRONOMIST)
+        self.farmer = User.objects.create_user(
+            'farmer', password='pw', role=Role.FARMER, managed_by=self.agro
+        )
+        self.land = Land.objects.create(
+            name='L', farmer=self.farmer, agronomist=self.agro
+        )
+        res = self.client.post('/api/auth/login/', {'username': 'agro', 'password': 'pw'})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {res.data["access"]}')
+
+    def test_multi_image_upload_creates_one_report_with_child_rows(self):
+        # Mock the background pipeline so the test is deterministic (no YOLO/weather).
+        with mock.patch('api.pipeline.process_analysis'):
+            res = self.client.post(
+                '/api/analyze/',
+                {'land': str(self.land.id), 'images': [_upload('a.png'), _upload('b.png'), _upload('c.png')]},
+                format='multipart',
+            )
+        self.assertEqual(res.status_code, 202, res.content)
+        self.assertEqual(res.data['image_count'], 3)
+        analysis = ImageAnalysis.objects.get(id=res.data['id'])
+        self.assertEqual(analysis.images.count(), 3)
+        # The first child reuses the survey's stored file (no double upload).
+        first = analysis.images.order_by('order').first()
+        self.assertEqual(first.image.name, analysis.image.name)
+
+    def test_single_image_still_works(self):
+        with mock.patch('api.pipeline.process_analysis'):
+            res = self.client.post(
+                '/api/analyze/',
+                {'land': str(self.land.id), 'images': [_upload('solo.png')]},
+                format='multipart',
+            )
+        self.assertEqual(res.status_code, 202, res.content)
+        self.assertEqual(res.data['image_count'], 1)
+
+    def test_upload_requires_a_land(self):
+        with mock.patch('api.pipeline.process_analysis'):
+            res = self.client.post(
+                '/api/analyze/', {'images': [_upload('a.png')]}, format='multipart'
+            )
+        self.assertEqual(res.status_code, 400)
+
+    def test_report_list_exposes_image_count(self):
+        analysis = ImageAnalysis.objects.create(
+            land=self.land, created_by=self.agro, status='done'
+        )
+        for i in range(2):
+            AnalysisImage.objects.create(
+                analysis=analysis, order=i, image=_upload(f'{i}.png')
+            )
+        res = self.client.get('/api/reports/')
+        row = next(r for r in res.data['results'] if r['id'] == str(analysis.id))
+        self.assertEqual(row['image_count'], 2)
+
+
+class AggregationTests(APITestCase):
+    """Worst-status-wins aggregation across a survey's detections."""
+
+    def test_any_stressed_makes_survey_stressed(self):
+        detections = [
+            {'class_name': 'healthy', 'confidence': 0.9},
+            {'class_name': 'healthy', 'confidence': 0.8},
+            {'class_name': 'stressed', 'confidence': 0.7},
+        ]
+        health = ml.summarize_health(detections)
+        self.assertEqual(health['status'], 'stressed')
+        self.assertEqual(health['stressed_regions'], 1)
+        self.assertEqual(health['healthy_regions'], 2)
+
+    def test_all_healthy_stays_healthy(self):
+        detections = [
+            {'class_name': 'healthy', 'confidence': 0.9},
+            {'class_name': 'healthy', 'confidence': 0.8},
+        ]
+        health = ml.summarize_health(detections)
+        self.assertEqual(health['status'], 'healthy')
+
+    def test_no_detections_is_no_detection(self):
+        health = ml.summarize_health([])
+        self.assertEqual(health['status'], 'no_detection')

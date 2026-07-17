@@ -67,12 +67,22 @@ export interface Weather {
   source: 'archive' | 'forecast'
 }
 
+export interface AnalysisImageOut {
+  id: string
+  image_url: string | null
+  annotated_image_url: string | null
+  crop_health: CropHealth | null
+  detections: Detection[]
+}
+
 export interface AnalysisResult {
   id: string
   status: 'pending' | 'processing' | 'done' | 'failed'
   land?: string | null
   image_url: string | null
   annotated_image_url: string | null
+  images?: AnalysisImageOut[]
+  image_count?: number
   captured_at?: string | null
   latitude?: number | null
   longitude?: number | null
@@ -92,6 +102,7 @@ export interface ReportRow {
   land_name: string | null
   crop_health: CropHealth | null
   report_pdf_url: string | null
+  image_count: number
   created_at: string
 }
 
@@ -280,13 +291,14 @@ export async function listReports(landId?: string): Promise<ReportRow[]> {
 // ---------------------------------------------------------------------------
 // Analysis pipeline
 // ---------------------------------------------------------------------------
-export async function uploadImage(
-  file: File,
+/** Upload one or more drone images as a single survey/report. */
+export async function uploadImages(
+  files: File[],
   landId: string,
   meta?: PhotoMeta,
 ): Promise<AnalysisResult> {
   const formData = new FormData()
-  formData.append('image', file)
+  for (const file of files) formData.append('images', file)
   formData.append('land', landId)
   if (meta?.capturedAt) formData.append('captured_at', meta.capturedAt)
   if (meta?.latitude) formData.append('latitude', meta.latitude)
@@ -295,6 +307,15 @@ export async function uploadImage(
 
   const res = await authFetch('/analyze/', { method: 'POST', body: formData })
   return jsonOrThrow<AnalysisResult>(res, 'Upload failed')
+}
+
+/** Convenience wrapper for a single image. */
+export function uploadImage(
+  file: File,
+  landId: string,
+  meta?: PhotoMeta,
+): Promise<AnalysisResult> {
+  return uploadImages([file], landId, meta)
 }
 
 export async function getAnalysisStatus(id: string): Promise<AnalysisResult> {

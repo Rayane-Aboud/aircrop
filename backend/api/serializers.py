@@ -24,12 +24,13 @@ class ReportListSerializer(serializers.ModelSerializer):
     land_name = serializers.CharField(source='land.name', read_only=True)
     status_label = serializers.SerializerMethodField()
     report_pdf_url = serializers.SerializerMethodField()
+    image_count = serializers.IntegerField(source='images.count', read_only=True)
 
     class Meta:
         model = ImageAnalysis
         fields = (
             'id', 'status', 'status_label', 'land', 'land_name',
-            'crop_health', 'report_pdf_url', 'created_at',
+            'crop_health', 'report_pdf_url', 'image_count', 'created_at',
         )
 
     def get_status_label(self, obj):
