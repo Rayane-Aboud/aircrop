@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import type { Role } from '../api'
 import { ROLE_LABEL, useAuth } from '../auth'
+import mark from '../assets/aircrop-mark.svg'
 
 interface NavItem {
   to: string
@@ -34,14 +35,9 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         className="flex items-center gap-2 px-5 py-5"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
-        <span
-          className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-bold"
-          style={{ background: 'var(--green)', color: '#06130c' }}
-        >
-          A
-        </span>
-        <span className="text-sm font-bold tracking-[0.18em]" style={{ color: 'var(--text)' }}>
-          AIRCROP
+        <img src={mark} alt="" className="h-8 w-8" />
+        <span className="text-base font-bold tracking-[0.14em]" style={{ color: 'var(--text)' }}>
+          Aircrop
         </span>
       </div>
 

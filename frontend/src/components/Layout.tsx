@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
+import mark from '../assets/aircrop-mark.svg'
 
 /** App shell: fixed sidebar on desktop, slide-over drawer on mobile. */
 export default function Layout() {
@@ -40,8 +41,9 @@ export default function Layout() {
           >
             ☰
           </button>
-          <span className="text-sm font-bold tracking-[0.18em]" style={{ color: 'var(--text)' }}>
-            AIRCROP
+          <img src={mark} alt="" className="h-7 w-7" />
+          <span className="text-base font-bold tracking-[0.14em]" style={{ color: 'var(--text)' }}>
+            Aircrop
           </span>
         </header>
 

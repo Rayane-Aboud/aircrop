@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../auth'
+import mark from '../assets/aircrop-mark.svg'
 
 export default function Login() {
   const { login } = useAuth()
@@ -26,14 +27,9 @@ export default function Login() {
     <div className="cad-grid flex min-h-screen items-center justify-center p-4">
       <div className="panel w-full max-w-sm p-8">
         <div className="mb-6 flex flex-col items-center gap-2">
-          <span
-            className="flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold"
-            style={{ background: 'var(--green)', color: '#06130c' }}
-          >
-            A
-          </span>
-          <span className="text-lg font-bold tracking-[0.2em]" style={{ color: 'var(--text)' }}>
-            AIRCROP
+          <img src={mark} alt="" className="h-14 w-14" />
+          <span className="text-xl font-bold tracking-[0.16em]" style={{ color: 'var(--text)' }}>
+            Aircrop
           </span>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             Crop Health Platform

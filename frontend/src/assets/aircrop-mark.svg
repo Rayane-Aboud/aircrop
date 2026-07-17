@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 40 212 160" role="img" aria-label="Aircrop">
+  <defs>
+    <style>
+      .ink { fill: #e8eaed; }
+      .inkStroke { fill: none; stroke: #e8eaed; stroke-linecap: round; stroke-linejoin: round; }
+      .leafLight { fill: #35c07f; }
+      .leafDark { fill: #2ea86a; }
+    </style>
+  </defs>
+
+  <!-- Propeller arms -->
+  <path class="inkStroke" stroke-width="11" d="M96,104 Q70,92 52,58" />
+  <path class="inkStroke" stroke-width="11" d="M144,104 Q170,92 188,58" />
+  <!-- Canopy arc -->
+  <path class="inkStroke" stroke-width="9" d="M74,74 Q120,50 166,74" />
+
+  <!-- Left propeller -->
+  <ellipse class="ink" cx="36" cy="55" rx="15" ry="6.5" />
+  <ellipse class="ink" cx="68" cy="55" rx="15" ry="6.5" />
+  <circle class="ink" cx="52" cy="55" r="6" />
+  <!-- Right propeller -->
+  <ellipse class="ink" cx="172" cy="55" rx="15" ry="6.5" />
+  <ellipse class="ink" cx="204" cy="55" rx="15" ry="6.5" />
+  <circle class="ink" cx="188" cy="55" r="6" />
+
+  <!-- Camera -->
+  <rect class="ink" x="98" y="98" width="44" height="30" rx="9" />
+  <circle class="ink" cx="120" cy="115" r="12" />
+  <circle cx="120" cy="115" r="6.5" fill="#23282d" />
+  <circle class="ink" cx="120" cy="115" r="2.6" />
+
+  <!-- Leaves -->
+  <path class="leafLight" d="M120,192 C92,182 68,158 74,120 C104,132 122,158 120,192 Z" />
+  <path class="leafDark" d="M120,192 C148,182 172,158 166,120 C136,132 118,158 120,192 Z" />
+  <path fill="none" stroke="#23282d" stroke-width="2.4" stroke-linecap="round" opacity="0.5"
+        d="M114,184 C100,166 88,146 83,128" />
+  <path fill="none" stroke="#23282d" stroke-width="2.4" stroke-linecap="round" opacity="0.35"
+        d="M126,184 C140,166 152,146 157,128" />
+</svg>
