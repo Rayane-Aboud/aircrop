@@ -160,4 +160,87 @@ body {
   .pill-green { color: var(--green-hi); border-color: var(--green-line); background: var(--green-dim); }
   .pill-warn  { color: var(--warn);  border-color: rgba(217,155,63,0.4); }
   .pill-danger{ color: var(--danger); border-color: rgba(229,83,75,0.4); }
+
+  /* Slide-over drawer --------------------------------------------- */
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 11, 13, 0.55);
+    backdrop-filter: blur(1.5px);
+    z-index: 40;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .drawer-overlay[data-open="true"] { opacity: 1; }
+
+  .drawer-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 100%;
+    max-width: 34rem;
+    background: var(--panel);
+    border-left: 1px solid var(--border-2);
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.4);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    overflow: hidden;
+  }
+  .drawer-panel[data-open="true"] { transform: translateX(0); }
+
+  /* Progress stepper ---------------------------------------------- */
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.35rem 0;
+  }
+  .step-dot {
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-top: 0.05rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--border-2);
+    background: var(--bg-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    color: var(--faint);
+    transition: all 0.2s ease;
+  }
+  .step[data-state="active"] .step-dot {
+    border-color: var(--green);
+    color: var(--green-hi);
+    box-shadow: 0 0 0 4px var(--green-dim);
+    animation: step-pulse 1.4s ease-in-out infinite;
+  }
+  .step[data-state="done"] .step-dot {
+    border-color: var(--green);
+    background: var(--green);
+    color: #06130c;
+  }
+  .step[data-state="failed"] .step-dot {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .step-line {
+    width: 1.5px;
+    flex: none;
+    margin-left: 0.6rem;
+    background: var(--border);
+    min-height: 0.9rem;
+  }
+  .step[data-state="done"] + .step-line,
+  .step-line[data-filled="true"] { background: var(--green-line); }
+}
+
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--green-dim); }
+  50%      { box-shadow: 0 0 0 7px rgba(46, 168, 106, 0.05); }
 }

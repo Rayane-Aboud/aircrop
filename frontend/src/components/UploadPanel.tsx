@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getAnalysisStatus, getSamples, sampleToFile, uploadImages } from '../api'
+import { getSamples, sampleToFile, uploadImages } from '../api'
 import type { AnalysisResult, PhotoMeta, Sample } from '../api'
-import ResultCard from './ResultCard'
-
-const POLL_INTERVAL_MS = 2000
 
 interface Selected {
   file: File
@@ -12,18 +9,23 @@ interface Selected {
 }
 
 /**
- * Multi-image analysis panel for a single land. Drone surveys usually produce
- * several shots, so images accumulate into one selection and are analyzed
- * together as a single report. The land is fixed by the `landId` prop.
+ * Multi-image selection + submit for a single land. Drone surveys usually
+ * produce several shots, so images accumulate into one selection and are
+ * uploaded together as a single report. The lifecycle after submit (polling,
+ * results) is owned by the parent via `onStarted`.
  */
-export default function UploadPanel({ landId, onDone }: { landId: string; onDone?: () => void }) {
+export default function UploadPanel({
+  landId,
+  onStarted,
+}: {
+  landId: string
+  onStarted: (initial: AnalysisResult, imageCount: number) => void
+}) {
   const [isDragging, setIsDragging] = useState(false)
   const [selected, setSelected] = useState<Selected[]>([])
-  const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [samples, setSamples] = useState<Sample[]>([])
   const [busy, setBusy] = useState(false)
-  const pollRef = useRef<number | null>(null)
 
   const [capturedAt, setCapturedAt] = useState('')
   const metaRef = useRef<PhotoMeta>({})
@@ -35,15 +37,6 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
       .catch(() => setSamples([]))
   }, [])
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }, [])
-
-  useEffect(() => stopPolling, [stopPolling])
-
   const addFiles = useCallback((files: File[]) => {
     const images = files.filter((f) => f.type.startsWith('image/'))
     if (images.length === 0) {
@@ -51,7 +44,6 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
       return
     }
     setError(null)
-    setResult(null)
     setSelected((prev) => [
       ...prev,
       ...images.map((file) => ({
@@ -75,32 +67,8 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
       prev.forEach((s) => URL.revokeObjectURL(s.preview))
       return []
     })
-    setResult(null)
     setError(null)
   }, [])
-
-  const startPolling = useCallback(
-    (id: string) => {
-      stopPolling()
-      pollRef.current = window.setInterval(() => {
-        getAnalysisStatus(id)
-          .then((data) => {
-            setResult(data)
-            if (data.status === 'done' || data.status === 'failed') {
-              stopPolling()
-              setBusy(false)
-              if (data.status === 'done') onDone?.()
-            }
-          })
-          .catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : 'Failed to check status')
-            stopPolling()
-            setBusy(false)
-          })
-      }, POLL_INTERVAL_MS)
-    },
-    [stopPolling, onDone],
-  )
 
   const analyze = useCallback(() => {
     if (selected.length === 0) {
@@ -108,18 +76,21 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
       return
     }
     setError(null)
-    setResult(null)
     setBusy(true)
-    uploadImages(selected.map((s) => s.file), landId, metaRef.current)
+    const chosen = selected
+    uploadImages(chosen.map((s) => s.file), landId, metaRef.current)
       .then((initial) => {
-        setResult(initial)
-        startPolling(initial.id)
+        onStarted(initial, chosen.length)
+        // Hand off to the parent (drawer + polling); reset the form.
+        chosen.forEach((s) => URL.revokeObjectURL(s.preview))
+        setSelected([])
+        setCapturedAt('')
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Upload failed')
-        setBusy(false)
       })
-  }, [selected, landId, startPolling])
+      .finally(() => setBusy(false))
+  }, [selected, landId, onStarted])
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -146,8 +117,6 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
     },
     [addFiles],
   )
-
-  const isProcessing = busy || result?.status === 'pending' || result?.status === 'processing'
 
   return (
     <div className="space-y-4">
@@ -240,20 +209,11 @@ export default function UploadPanel({ landId, onDone }: { landId: string; onDone
 
       <button type="button" onClick={analyze} disabled={selected.length === 0 || busy} className="btn-primary">
         {busy
-          ? 'Analyzing…'
+          ? 'Starting…'
           : `Analyze ${selected.length || ''} image${selected.length === 1 ? '' : 's'}`.trim()}
       </button>
 
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
-      {isProcessing && !error && (
-        <p className="animate-pulse" style={{ color: 'var(--muted)' }}>
-          Analyzing survey…
-        </p>
-      )}
-      {result?.status === 'done' && <ResultCard result={result} />}
-      {result?.status === 'failed' && (
-        <p style={{ color: 'var(--danger)' }}>Analysis failed: {result.error}</p>
-      )}
     </div>
   )
 }
