@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsAgronomistOrSuperAdmin
 
-from . import exif, pipeline
+from . import exif, pipeline, weather
 from .models import AnalysisImage, ImageAnalysis, Land
 from .serializers import LandSerializer, ReportListSerializer
 
@@ -253,6 +253,68 @@ def analysis_report_pdf(request, analysis_id):
         f'attachment; filename="aircrop-report-{analysis.id}.pdf"'
     )
     return response
+
+
+# --------------------------------------------------------------------------
+# Live weather (current conditions + short forecast) for a land or coordinate.
+# --------------------------------------------------------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def weather_now(request):
+    """
+    Real-time weather for a land (``?land=<id>``) or explicit coordinates
+    (``?lat=&lon=``).
+
+    Coordinate resolution for a land: use its stored latitude/longitude; if
+    missing, geocode its ``location_name`` and persist the result back onto the
+    land so every later lookup (and the analysis pipeline) stays consistent.
+    """
+    lat = _parse_float(request.query_params.get('lat'))
+    lon = _parse_float(request.query_params.get('lon'))
+    location_name = None
+    land_id = request.query_params.get('land')
+
+    if land_id:
+        try:
+            land = scoped_lands(request.user).get(id=land_id)
+        except Land.DoesNotExist:
+            return Response({'error': 'Land not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        lat, lon = land.latitude, land.longitude
+        location_name = land.location_name or None
+
+        # No coordinates on the land yet — resolve from the place name and save.
+        if (lat is None or lon is None) and land.location_name:
+            geo = weather.geocode(land.location_name)
+            if geo:
+                lat, lon = geo['latitude'], geo['longitude']
+                land.latitude, land.longitude = lat, lon
+                if not land.location_name:
+                    land.location_name = geo['location_name']
+                land.save(update_fields=['latitude', 'longitude', 'location_name', 'updated_at'])
+                location_name = land.location_name
+
+    if lat is None or lon is None:
+        return Response(
+            {'error': 'No coordinates available. Add a location or lat/lon to this land.'},
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    live = weather.get_live(lat, lon)
+    if not live:
+        return Response(
+            {'error': 'Weather is temporarily unavailable.'},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({
+        'latitude': lat,
+        'longitude': lon,
+        'location_name': location_name,
+        'current': live['current'],
+        'forecast': live['forecast'],
+        'fetched_at': timezone.now().isoformat(),
+    })
 
 
 # --------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { downloadReportPdf, getAnalysisStatus, listLands, listReports } from '..
 import type { AnalysisResult, Land, ReportRow } from '../api'
 import AnalysisDrawer from '../components/AnalysisDrawer'
 import UploadPanel from '../components/UploadPanel'
+import WeatherStrip from '../components/WeatherStrip'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -146,6 +147,8 @@ export default function LandDetail() {
       </div>
 
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+
+      {landId && <WeatherStrip landId={landId} />}
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="panel cad-grid p-5">

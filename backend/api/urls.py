@@ -19,6 +19,7 @@ urlpatterns = [
         views.analysis_report_pdf,
         name='analysis-report-pdf',
     ),
+    path('weather/', views.weather_now, name='weather-now'),
     path('samples/', views.list_samples, name='list-samples'),
     path('samples/<str:sample_id>/image/', views.sample_image, name='sample-image'),
 ]

@@ -202,6 +202,80 @@ class MultiImageUploadTests(APITestCase):
         self.assertEqual(row['image_count'], 2)
 
 
+class LiveWeatherTests(APITestCase):
+    """GET /api/weather/ — coordinate resolution + role scoping (network mocked)."""
+
+    FAKE_LIVE = {
+        'current': {
+            'temperature_c': 22.5, 'apparent_temperature_c': 21.0, 'humidity_pct': 48.0,
+            'precipitation_mm': 0.0, 'wind_kmh': 9.0, 'weather_code': 1,
+            'condition': 'Mainly clear', 'time': '2026-07-17T10:00',
+        },
+        'forecast': [
+            {'date': '2026-07-17', 'temperature_max_c': 31.0, 'temperature_min_c': 19.0,
+             'precipitation_mm': 0.0, 'precipitation_prob_pct': 5, 'wind_kmh': 12.0,
+             'weather_code': 1, 'condition': 'Mainly clear'},
+        ],
+    }
+
+    def setUp(self):
+        self.agro = User.objects.create_user('agro', password='pw', role=Role.AGRONOMIST)
+        self.other = User.objects.create_user('other', password='pw', role=Role.AGRONOMIST)
+        self.farmer = User.objects.create_user(
+            'farmer', password='pw', role=Role.FARMER, managed_by=self.agro
+        )
+        self.geo_land = Land.objects.create(
+            name='GeoLand', farmer=self.farmer, agronomist=self.agro,
+            latitude=36.75, longitude=3.06, location_name='Algiers',
+        )
+        # No coordinates — only a place name, to exercise geocode + persist.
+        self.named_land = Land.objects.create(
+            name='NamedLand', farmer=self.farmer, agronomist=self.agro,
+            location_name='Oran',
+        )
+        res = self.client.post('/api/auth/login/', {'username': 'agro', 'password': 'pw'})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {res.data["access"]}')
+
+    def test_weather_for_land_with_coordinates(self):
+        with mock.patch('api.weather.get_live', return_value=self.FAKE_LIVE) as gl:
+            res = self.client.get(f'/api/weather/?land={self.geo_land.id}')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.data['current']['temperature_c'], 22.5)
+        self.assertEqual(len(res.data['forecast']), 1)
+        gl.assert_called_once_with(36.75, 3.06)
+
+    def test_geocodes_and_persists_when_land_has_no_coordinates(self):
+        geo = {'latitude': 35.7, 'longitude': -0.63, 'location_name': 'Oran, Algeria'}
+        with mock.patch('api.weather.geocode', return_value=geo), \
+                mock.patch('api.weather.get_live', return_value=self.FAKE_LIVE):
+            res = self.client.get(f'/api/weather/?land={self.named_land.id}')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.named_land.refresh_from_db()
+        self.assertEqual(self.named_land.latitude, 35.7)
+        self.assertEqual(self.named_land.longitude, -0.63)
+
+    def test_422_when_no_location_resolvable(self):
+        bare = Land.objects.create(name='Bare', farmer=self.farmer, agronomist=self.agro)
+        with mock.patch('api.weather.geocode', return_value=None):
+            res = self.client.get(f'/api/weather/?land={bare.id}')
+        self.assertEqual(res.status_code, 422)
+
+    def test_cannot_read_weather_for_other_agronomists_land(self):
+        foreign = Land.objects.create(
+            name='Foreign',
+            farmer=User.objects.create_user('f2', password='pw', role=Role.FARMER, managed_by=self.other),
+            agronomist=self.other, latitude=1.0, longitude=1.0,
+        )
+        res = self.client.get(f'/api/weather/?land={foreign.id}')
+        self.assertEqual(res.status_code, 404)
+
+    def test_explicit_lat_lon(self):
+        with mock.patch('api.weather.get_live', return_value=self.FAKE_LIVE) as gl:
+            res = self.client.get('/api/weather/?lat=10&lon=20')
+        self.assertEqual(res.status_code, 200, res.content)
+        gl.assert_called_once_with(10.0, 20.0)
+
+
 class AggregationTests(APITestCase):
     """Worst-status-wins aggregation across a survey's detections."""
 

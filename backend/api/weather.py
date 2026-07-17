@@ -44,6 +44,49 @@ _DAILY_VARS = [
     'wind_speed_10m_max',
 ]
 
+# Live "right now" conditions and a short forecast.
+_CURRENT_VARS = [
+    'temperature_2m',
+    'apparent_temperature',
+    'relative_humidity_2m',
+    'precipitation',
+    'wind_speed_10m',
+    'weather_code',
+]
+_FORECAST_DAILY_VARS = [
+    'temperature_2m_max',
+    'temperature_2m_min',
+    'precipitation_sum',
+    'precipitation_probability_max',
+    'wind_speed_10m_max',
+    'weather_code',
+]
+
+# WMO weather interpretation codes → short human labels (Open-Meteo standard).
+_WMO_CODES = {
+    0: 'Clear sky',
+    1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+    45: 'Fog', 48: 'Rime fog',
+    51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+    56: 'Freezing drizzle', 57: 'Freezing drizzle',
+    61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+    66: 'Freezing rain', 67: 'Freezing rain',
+    71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+    80: 'Light showers', 81: 'Showers', 82: 'Violent showers',
+    85: 'Snow showers', 86: 'Snow showers',
+    95: 'Thunderstorm', 96: 'Thunderstorm w/ hail', 99: 'Thunderstorm w/ hail',
+}
+
+
+def describe_code(code):
+    """Human-readable label for a WMO weather code (or None)."""
+    if code is None:
+        return None
+    try:
+        return _WMO_CODES.get(int(code), 'Unknown')
+    except (TypeError, ValueError):
+        return None
+
 
 def _get_json(url, params):
     query = urllib.parse.urlencode(params, doseq=True)
@@ -130,6 +173,81 @@ def get_weather(latitude, longitude, target_date):
         return None
 
     return _extract_day(data, iso_day, source='forecast' if use_forecast else 'archive')
+
+
+def get_live(latitude, longitude, forecast_days=4):
+    """
+    Current conditions + a short daily forecast for a coordinate, right now.
+
+    Returns::
+
+        {
+            'current': {temperature_c, apparent_temperature_c, humidity_pct,
+                        precipitation_mm, wind_kmh, weather_code, condition, time},
+            'forecast': [{date, temperature_max_c, temperature_min_c,
+                          precipitation_mm, precipitation_prob_pct, wind_kmh,
+                          weather_code, condition}, ...],
+        }
+
+    or ``None`` if coordinates are missing or the lookup fails. Fail-soft.
+    """
+    if latitude is None or longitude is None:
+        return None
+
+    params = {
+        'latitude': latitude,
+        'longitude': longitude,
+        'current': ','.join(_CURRENT_VARS),
+        'daily': ','.join(_FORECAST_DAILY_VARS),
+        'forecast_days': max(1, min(int(forecast_days or 4), 7)),
+        'timezone': 'auto',
+    }
+    try:
+        data = _get_json(FORECAST_URL, params)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('Live weather lookup failed for %s,%s: %s', latitude, longitude, exc)
+        return None
+
+    return _extract_live(data)
+
+
+def _extract_live(data):
+    cur = data.get('current') or {}
+    current = None
+    if cur:
+        current = {
+            'temperature_c': cur.get('temperature_2m'),
+            'apparent_temperature_c': cur.get('apparent_temperature'),
+            'humidity_pct': cur.get('relative_humidity_2m'),
+            'precipitation_mm': cur.get('precipitation'),
+            'wind_kmh': cur.get('wind_speed_10m'),
+            'weather_code': cur.get('weather_code'),
+            'condition': describe_code(cur.get('weather_code')),
+            'time': cur.get('time'),
+        }
+
+    daily = data.get('daily') or {}
+    times = daily.get('time') or []
+
+    def at(key, i):
+        arr = daily.get(key) or []
+        return arr[i] if i < len(arr) else None
+
+    forecast = [
+        {
+            'date': day,
+            'temperature_max_c': at('temperature_2m_max', i),
+            'temperature_min_c': at('temperature_2m_min', i),
+            'precipitation_mm': at('precipitation_sum', i),
+            'precipitation_prob_pct': at('precipitation_probability_max', i),
+            'wind_kmh': at('wind_speed_10m_max', i),
+            'weather_code': at('weather_code', i),
+            'condition': describe_code(at('weather_code', i)),
+        }
+        for i, day in enumerate(times)
+    ]
+
+    return {'current': current, 'forecast': forecast}
 
 
 def _extract_day(data, iso_day, source):

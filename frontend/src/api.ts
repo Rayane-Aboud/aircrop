@@ -118,6 +118,37 @@ export interface Sample {
   image_url: string
 }
 
+export interface CurrentWeather {
+  temperature_c: number | null
+  apparent_temperature_c: number | null
+  humidity_pct: number | null
+  precipitation_mm: number | null
+  wind_kmh: number | null
+  weather_code: number | null
+  condition: string | null
+  time: string | null
+}
+
+export interface ForecastDay {
+  date: string
+  temperature_max_c: number | null
+  temperature_min_c: number | null
+  precipitation_mm: number | null
+  precipitation_prob_pct: number | null
+  wind_kmh: number | null
+  weather_code: number | null
+  condition: string | null
+}
+
+export interface LiveWeather {
+  latitude: number | null
+  longitude: number | null
+  location_name: string | null
+  current: CurrentWeather | null
+  forecast: ForecastDay[]
+  fetched_at: string
+}
+
 interface Paginated<T> {
   count: number
   next: string | null
@@ -321,6 +352,20 @@ export function uploadImage(
 export async function getAnalysisStatus(id: string): Promise<AnalysisResult> {
   const res = await authFetch(`/analyze/${id}/`)
   return jsonOrThrow<AnalysisResult>(res, 'Status check failed')
+}
+
+// ---------------------------------------------------------------------------
+// Live weather (current conditions + short forecast)
+// ---------------------------------------------------------------------------
+export async function getLiveWeather(
+  params: { landId?: string; lat?: number; lon?: number },
+): Promise<LiveWeather> {
+  const q = new URLSearchParams()
+  if (params.landId) q.set('land', params.landId)
+  if (params.lat != null) q.set('lat', String(params.lat))
+  if (params.lon != null) q.set('lon', String(params.lon))
+  const res = await authFetch(`/weather/?${q.toString()}`)
+  return jsonOrThrow<LiveWeather>(res, 'Failed to load weather')
 }
 
 export async function getSamples(): Promise<Sample[]> {
