@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import type { Role } from '../api'
 import { ROLE_LABEL, useAuth } from '../auth'
+import { useTheme } from '../theme'
 import mark from '../assets/aircrop-mark.svg'
 
 interface NavItem {
@@ -23,6 +24,7 @@ const NAV: Record<Role, NavItem[]> = {
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout } = useAuth()
+  const { theme, toggle } = useTheme()
   if (!user) return null
   const items = NAV[user.role]
 
@@ -78,9 +80,20 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             </p>
           </div>
         </div>
-        <button type="button" onClick={logout} className="btn-ghost w-full">
-          Log out
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={toggle}
+            className="btn-ghost"
+            aria-label="Toggle colour theme"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+          <button type="button" onClick={logout} className="btn-ghost flex-1">
+            Log out
+          </button>
+        </div>
       </div>
     </div>
   )

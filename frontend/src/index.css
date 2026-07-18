@@ -1,26 +1,52 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------ */
-/*  AIRCROP — AutoCAD-inspired dark theme                             */
-/*  Classical dark grey canvas · professional green · white type      */
+/*  AIRCROP — AutoCAD-inspired theme (light default + dark variant)   */
+/*  Professional green accent · switchable via [data-theme]           */
 /* ------------------------------------------------------------------ */
-:root {
-  --bg:        #23282d; /* main canvas — classic CAD dark grey        */
-  --bg-2:      #1c2024; /* deeper wells (sidebar, drop zones)         */
-  --panel:     #2a3036; /* raised panels / cards                      */
-  --panel-2:   #30373e; /* hover / active panel                       */
-  --border:    #3a424a; /* hairline borders                           */
-  --border-2:  #4a545e; /* stronger borders / focus                   */
-  --grid:      rgba(255, 255, 255, 0.035); /* faint drafting grid     */
+
+/* Light theme — the default (also applied when data-theme is unset). */
+:root,
+:root[data-theme='light'] {
+  --bg:        #f4f6f8; /* main canvas — soft light grey              */
+  --bg-2:      #e9edf1; /* deeper wells (sidebar, drop zones)         */
+  --panel:     #ffffff; /* raised panels / cards                      */
+  --panel-2:   #eef2f6; /* hover / active panel                       */
+  --border:    #d7dde3; /* hairline borders                           */
+  --border-2:  #bcc5cd; /* stronger borders / focus                   */
+  --grid:      rgba(20, 30, 40, 0.045); /* faint drafting grid        */
 
   --green:      #2ea86a; /* professional green — primary accent       */
-  --green-hi:   #35c07f; /* hover                                     */
+  --green-hi:   #1c7c4c; /* readable green on light surfaces          */
+  --green-dim:  rgba(46, 168, 106, 0.13);
+  --green-line: rgba(46, 168, 106, 0.5);
+
+  --text:      #1c2226; /* near-black primary                         */
+  --muted:     #566069; /* secondary                                  */
+  --faint:     #8a939c; /* tertiary / placeholders                    */
+
+  --danger:    #cf3128;
+  --warn:      #b1772a;
+}
+
+/* Dark theme — the original AutoCAD-inspired dark canvas. */
+:root[data-theme='dark'] {
+  --bg:        #23282d;
+  --bg-2:      #1c2024;
+  --panel:     #2a3036;
+  --panel-2:   #30373e;
+  --border:    #3a424a;
+  --border-2:  #4a545e;
+  --grid:      rgba(255, 255, 255, 0.035);
+
+  --green:      #2ea86a;
+  --green-hi:   #35c07f;
   --green-dim:  rgba(46, 168, 106, 0.14);
   --green-line: rgba(46, 168, 106, 0.45);
 
-  --text:      #e8eaed; /* white-ish primary                          */
-  --muted:     #9aa4ad; /* secondary                                  */
-  --faint:     #6b757d; /* tertiary / placeholders                    */
+  --text:      #e8eaed;
+  --muted:     #9aa4ad;
+  --faint:     #6b757d;
 
   --danger:    #e5534b;
   --warn:      #d99b3f;
@@ -37,6 +63,7 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 /* Faint AutoCAD drafting grid — used on the working canvas. */
