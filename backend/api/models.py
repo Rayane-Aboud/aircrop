@@ -35,6 +35,13 @@ class Land(models.Model):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
 
+    # Field boundary as a GeoJSON polygon (WGS84 lon/lat) — the canonical
+    # geometry. ``area_hectares`` and lat/lon (centroid) are derived from it on
+    # save (see api/geo.py). Stored as JSON now; a future PostGIS PolygonField
+    # can be backfilled straight from this without changing the API.
+    boundary = models.JSONField(null=True, blank=True)
+    boundary_updated_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

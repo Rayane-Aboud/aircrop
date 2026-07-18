@@ -17,6 +17,12 @@ export interface User {
   date_joined: string
 }
 
+/** GeoJSON Polygon (WGS84 lon/lat). Rings are arrays of [lon, lat] pairs. */
+export interface GeoPolygon {
+  type: 'Polygon'
+  coordinates: number[][][]
+}
+
 export interface Land {
   id: string
   name: string
@@ -29,6 +35,8 @@ export interface Land {
   location_name: string
   latitude: number | null
   longitude: number | null
+  boundary: GeoPolygon | null
+  boundary_updated_at: string | null
   report_count: number
   created_at: string
 }
@@ -307,6 +315,23 @@ export async function createLand(payload: NewLand): Promise<Land> {
     body: JSON.stringify(payload),
   })
   return jsonOrThrow<Land>(res, 'Failed to create land')
+}
+
+/**
+ * Save (or clear) a land's boundary polygon. The backend derives
+ * area_hectares + centroid (latitude/longitude) from the geometry, so the
+ * returned Land carries the freshly computed values.
+ */
+export async function updateLandBoundary(
+  landId: string,
+  boundary: GeoPolygon | null,
+): Promise<Land> {
+  const res = await authFetch(`/lands/${landId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ boundary }),
+  })
+  return jsonOrThrow<Land>(res, 'Failed to save boundary')
 }
 
 // ---------------------------------------------------------------------------

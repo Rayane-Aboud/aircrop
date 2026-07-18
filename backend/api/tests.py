@@ -276,6 +276,84 @@ class LiveWeatherTests(APITestCase):
         gl.assert_called_once_with(10.0, 20.0)
 
 
+class LandBoundaryTests(APITestCase):
+    """Drawing a land boundary derives area + centroid and is role-scoped."""
+
+    # ~0.01° square near the equator → ~123.6 ha.
+    SQUARE = {
+        'type': 'Polygon',
+        'coordinates': [[[0.0, 0.0], [0.01, 0.0], [0.01, 0.01], [0.0, 0.01], [0.0, 0.0]]],
+    }
+
+    def setUp(self):
+        self.agro = User.objects.create_user('agro', password='pw', role=Role.AGRONOMIST)
+        self.other = User.objects.create_user('other', password='pw', role=Role.AGRONOMIST)
+        self.farmer = User.objects.create_user(
+            'farmer', password='pw', role=Role.FARMER, managed_by=self.agro
+        )
+        self.land = Land.objects.create(name='L', farmer=self.farmer, agronomist=self.agro)
+        res = self.client.post('/api/auth/login/', {'username': 'agro', 'password': 'pw'})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {res.data["access"]}')
+
+    def test_geo_helpers(self):
+        from api import geo
+
+        area = geo.polygon_area_hectares(self.SQUARE)
+        self.assertTrue(120 < area < 128, area)
+        lat, lon = geo.polygon_centroid(self.SQUARE)
+        self.assertAlmostEqual(lat, 0.005, places=3)
+        self.assertAlmostEqual(lon, 0.005, places=3)
+
+    def test_patch_boundary_derives_area_and_centroid(self):
+        res = self.client.patch(
+            f'/api/lands/{self.land.id}/', {'boundary': self.SQUARE}, format='json'
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.land.refresh_from_db()
+        self.assertIsNotNone(self.land.boundary)
+        self.assertTrue(120 < self.land.area_hectares < 128)
+        self.assertAlmostEqual(self.land.latitude, 0.005, places=3)
+        self.assertAlmostEqual(self.land.longitude, 0.005, places=3)
+        self.assertIsNotNone(self.land.boundary_updated_at)
+
+    def test_invalid_boundary_rejected(self):
+        bad = {'type': 'Polygon', 'coordinates': [[[0.0, 0.0], [0.01, 0.0]]]}  # 2 pts
+        res = self.client.patch(
+            f'/api/lands/{self.land.id}/', {'boundary': bad}, format='json'
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_clearing_boundary(self):
+        self.land.boundary = self.SQUARE
+        self.land.save(update_fields=['boundary'])
+        res = self.client.patch(
+            f'/api/lands/{self.land.id}/', {'boundary': None}, format='json'
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.land.refresh_from_db()
+        self.assertIsNone(self.land.boundary)
+        self.assertIsNone(self.land.boundary_updated_at)
+
+    def test_cannot_edit_other_agronomists_land(self):
+        foreign = Land.objects.create(
+            name='F',
+            farmer=User.objects.create_user('f2', password='pw', role=Role.FARMER, managed_by=self.other),
+            agronomist=self.other,
+        )
+        res = self.client.patch(
+            f'/api/lands/{foreign.id}/', {'boundary': self.SQUARE}, format='json'
+        )
+        self.assertEqual(res.status_code, 404)
+
+    def test_farmer_cannot_edit_boundary(self):
+        r = self.client.post('/api/auth/login/', {'username': 'farmer', 'password': 'pw'})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {r.data["access"]}')
+        res = self.client.patch(
+            f'/api/lands/{self.land.id}/', {'boundary': self.SQUARE}, format='json'
+        )
+        self.assertEqual(res.status_code, 403)
+
+
 class AggregationTests(APITestCase):
     """Worst-status-wins aggregation across a survey's detections."""
 

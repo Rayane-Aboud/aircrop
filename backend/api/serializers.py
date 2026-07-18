@@ -1,5 +1,7 @@
+from django.utils import timezone
 from rest_framework import serializers
 
+from . import geo
 from .models import ImageAnalysis, Land
 
 
@@ -13,9 +15,45 @@ class LandSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'name', 'farmer', 'farmer_name', 'agronomist', 'agronomist_name',
             'area_hectares', 'crop_type', 'location_name', 'latitude', 'longitude',
-            'report_count', 'created_at',
+            'boundary', 'boundary_updated_at', 'report_count', 'created_at',
         )
-        read_only_fields = ('id', 'agronomist', 'agronomist_name', 'created_at')
+        read_only_fields = (
+            'id', 'agronomist', 'agronomist_name', 'boundary_updated_at', 'created_at',
+        )
+
+    def validate_boundary(self, value):
+        # Allow clearing the boundary (null); otherwise require a real polygon.
+        if value in (None, {}):
+            return None
+        if not geo.is_valid_polygon(value):
+            raise serializers.ValidationError(
+                'boundary must be a GeoJSON Polygon with at least 3 points.'
+            )
+        return value
+
+    def _derive_from_boundary(self, data):
+        """When a boundary is set/changed, auto-fill area + centroid + stamp."""
+        if 'boundary' not in data:
+            return
+        boundary = data.get('boundary')
+        if boundary:
+            area = geo.polygon_area_hectares(boundary)
+            if area is not None:
+                data['area_hectares'] = area
+            centroid = geo.polygon_centroid(boundary)
+            if centroid:
+                data['latitude'], data['longitude'] = centroid
+            data['boundary_updated_at'] = timezone.now()
+        else:
+            data['boundary_updated_at'] = None
+
+    def create(self, validated_data):
+        self._derive_from_boundary(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        self._derive_from_boundary(validated_data)
+        return super().update(instance, validated_data)
 
 
 class ReportListSerializer(serializers.ModelSerializer):

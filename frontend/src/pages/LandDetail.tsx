@@ -3,10 +3,13 @@ import { Link, useParams } from 'react-router-dom'
 import { downloadReportPdf, getAnalysisStatus, listLands, listReports } from '../api'
 import type { AnalysisResult, Land, ReportRow } from '../api'
 import AnalysisDrawer from '../components/AnalysisDrawer'
+import LandMap from '../components/LandMap'
 import UploadPanel from '../components/UploadPanel'
 import WeatherStrip from '../components/WeatherStrip'
 
 const POLL_INTERVAL_MS = 2000
+
+type Tab = 'analysis' | 'map'
 
 const VERDICT_PILL: Record<string, string> = {
   healthy: 'pill pill-green',
@@ -34,6 +37,7 @@ export default function LandDetail() {
 
   const [active, setActive] = useState<AnalysisResult | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>('analysis')
   const pollRef = useRef<number | null>(null)
 
   const loadReports = useCallback(() => {
@@ -150,6 +154,38 @@ export default function LandDetail() {
 
       {landId && <WeatherStrip landId={landId} />}
 
+      <div className="flex gap-1 border-b" style={{ borderColor: 'var(--border)' }}>
+        {(['analysis', 'map'] as Tab[]).map((t) => {
+          const activeTab = tab === t
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className="px-4 py-2 text-sm font-medium transition-colors"
+              style={{
+                color: activeTab ? 'var(--green-hi)' : 'var(--muted)',
+                borderBottom: activeTab ? '2px solid var(--green)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >
+              {t === 'analysis' ? 'Analysis' : 'Map & borders'}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'map' ? (
+        <section className="panel p-5">
+          {land ? (
+            <LandMap land={land} onSaved={setLand} />
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>
+              Loading land…
+            </p>
+          )}
+        </section>
+      ) : (
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="panel cad-grid p-5">
           <p className="eyebrow mb-3">New analysis</p>
@@ -221,6 +257,7 @@ export default function LandDetail() {
           )}
         </div>
       </section>
+      )}
 
       <AnalysisDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} result={active} />
     </div>
