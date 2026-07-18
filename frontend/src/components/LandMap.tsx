@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { LayersControl, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import '@geoman-io/leaflet-geoman-free'
 import 'leaflet/dist/leaflet.css'
@@ -7,11 +7,19 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { updateLandBoundary } from '../api'
 import type { GeoPolygon, Land } from '../api'
 
-// Esri World Imagery — free satellite basemap, no API key required.
+// Esri World Imagery — free, keyless, sub-metre aerial. Sharpest base for
+// tracing field corners, so it's the default.
 const ESRI_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 const ESRI_ATTR =
   'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+
+// Sentinel-2 cloudless mosaic (EOX) — free, keyless, cloud-free 10 m imagery.
+// Coarser than Esri (upscaled past its native ~z15) but a true, recent
+// vegetation view; offered as an alternate base layer.
+const S2_YEAR = 2024
+const S2_URL = `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${S2_YEAR}_3857/default/g/{z}/{y}/{x}.jpg`
+const S2_ATTR = `Sentinel-2 cloudless ${S2_YEAR} by EOX IT Services GmbH — contains modified Copernicus Sentinel data`
 
 // Sensible fallback view when a land has no coordinates yet (roughly Algeria).
 const FALLBACK_CENTER: [number, number] = [28.0, 2.0]
@@ -258,7 +266,19 @@ export default function LandMap({ land, onSaved }: LandMapProps) {
           style={{ height: '100%', width: '100%', background: 'var(--bg-2)' }}
           scrollWheelZoom
         >
-          <TileLayer url={ESRI_URL} attribution={ESRI_ATTR} maxZoom={19} />
+          <LayersControl position="topleft">
+            <LayersControl.BaseLayer checked name="Satellite (Esri)">
+              <TileLayer url={ESRI_URL} attribution={ESRI_ATTR} maxZoom={19} />
+            </LayersControl.BaseLayer>
+            <LayersControl.BaseLayer name="Sentinel-2 (cloudless)">
+              <TileLayer
+                url={S2_URL}
+                attribution={S2_ATTR}
+                maxZoom={19}
+                maxNativeZoom={15}
+              />
+            </LayersControl.BaseLayer>
+          </LayersControl>
           <DrawLayer
             land={land}
             onDraft={setDraft}
