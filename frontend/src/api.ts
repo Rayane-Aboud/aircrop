@@ -157,6 +157,39 @@ export interface LiveWeather {
   fetched_at: string
 }
 
+export type OrthomosaicStatus =
+  | 'uploading'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'canceled'
+
+export type OrthomosaicPreset = 'fast' | 'full'
+
+export interface Orthomosaic {
+  id: string
+  land: string
+  name: string
+  preset: OrthomosaicPreset
+  status: OrthomosaicStatus
+  status_label: string
+  progress: number
+  image_count: number
+  processing_time_ms: number | null
+  error: string | null
+  created_at: string
+  /** Signed download links (completed runs only). */
+  assets: { name: string; url: string }[]
+  /** Orthophoto tile layer (completed runs with an orthophoto). */
+  orthophoto: {
+    bounds: [number, number, number, number] // west, south, east, north
+    minzoom: number | null
+    maxzoom: number | null
+    tiles_url: string // Leaflet template with {z}/{x}/{y}
+  } | null
+}
+
 interface Paginated<T> {
   count: number
   next: string | null
@@ -391,6 +424,74 @@ export async function getLiveWeather(
   if (params.lon != null) q.set('lon', String(params.lon))
   const res = await authFetch(`/weather/?${q.toString()}`)
   return jsonOrThrow<LiveWeather>(res, 'Failed to load weather')
+}
+
+// ---------------------------------------------------------------------------
+// Orthomosaics (WebODM)
+// ---------------------------------------------------------------------------
+export async function listOrthomosaics(
+  landId: string,
+): Promise<{ configured: boolean; results: Orthomosaic[] }> {
+  const res = await authFetch(`/orthomosaics/?land=${landId}`)
+  return jsonOrThrow(res, 'Failed to load orthomosaics')
+}
+
+export async function getOrthomosaic(id: string): Promise<Orthomosaic> {
+  const res = await authFetch(`/orthomosaics/${id}/`)
+  return jsonOrThrow<Orthomosaic>(res, 'Status check failed')
+}
+
+// Keep each request well under the proxy's body limit (nginx: /api/orthomosaics/).
+const ORTHO_BATCH_BYTES = 80 * 1024 * 1024
+const ORTHO_BATCH_FILES = 25
+
+function batchFiles(files: File[]): File[][] {
+  const batches: File[][] = []
+  let current: File[] = []
+  let size = 0
+  for (const f of files) {
+    if (current.length && (size + f.size > ORTHO_BATCH_BYTES || current.length >= ORTHO_BATCH_FILES)) {
+      batches.push(current)
+      current = []
+      size = 0
+    }
+    current.push(f)
+    size += f.size
+  }
+  if (current.length) batches.push(current)
+  return batches
+}
+
+/**
+ * Start a WebODM run: open the task, upload images in batches, then commit it
+ * for processing. ``onUploaded`` reports how many images have been sent.
+ */
+export async function runOrthomosaic(
+  landId: string,
+  files: File[],
+  preset: OrthomosaicPreset,
+  onUploaded?: (sent: number, task: Orthomosaic) => void,
+): Promise<Orthomosaic> {
+  let res = await authFetch('/orthomosaics/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ land: landId, preset }),
+  })
+  let task = await jsonOrThrow<Orthomosaic>(res, 'Failed to start orthomosaic')
+  onUploaded?.(0, task)
+
+  let sent = 0
+  for (const batch of batchFiles(files)) {
+    const form = new FormData()
+    for (const f of batch) form.append('images', f)
+    res = await authFetch(`/orthomosaics/${task.id}/images/`, { method: 'POST', body: form })
+    task = await jsonOrThrow<Orthomosaic>(res, 'Image upload failed')
+    sent += batch.length
+    onUploaded?.(sent, task)
+  }
+
+  res = await authFetch(`/orthomosaics/${task.id}/commit/`, { method: 'POST' })
+  return jsonOrThrow<Orthomosaic>(res, 'Failed to start processing')
 }
 
 export async function getSamples(): Promise<Sample[]> {

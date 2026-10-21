@@ -11,11 +11,12 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from accounts.models import Role
-from api import ml
-from api.models import AnalysisImage, ImageAnalysis, Land
+from api import ml, orthomosaic, webodm
+from api.models import AnalysisImage, ImageAnalysis, Land, OrthomosaicTask
 
 User = get_user_model()
 
@@ -379,3 +380,138 @@ class AggregationTests(APITestCase):
     def test_no_detections_is_no_detection(self):
         health = ml.summarize_health([])
         self.assertEqual(health['status'], 'no_detection')
+
+
+@override_settings(
+    WEBODM_URL='http://webodm.test', WEBODM_USERNAME='svc', WEBODM_PASSWORD='pw'
+)
+class OrthomosaicTests(APITestCase):
+    """WebODM orthomosaic runs — batched upload, sync, signed tiles (WebODM mocked)."""
+
+    def setUp(self):
+        self.agro = User.objects.create_user('agro', password='pw', role=Role.AGRONOMIST)
+        self.other = User.objects.create_user('other', password='pw', role=Role.AGRONOMIST)
+        self.farmer = User.objects.create_user(
+            'farmer', password='pw', role=Role.FARMER, managed_by=self.agro
+        )
+        self.land = Land.objects.create(name='Field A', farmer=self.farmer, agronomist=self.agro)
+
+    def _login(self, username):
+        r = self.client.post('/api/auth/login/', {'username': username, 'password': 'pw'})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {r.data["access"]}')
+
+    def _task(self, **kwargs):
+        defaults = dict(
+            land=self.land, created_by=self.agro, name='Run',
+            webodm_project_id=7, webodm_task_id='abc',
+        )
+        defaults.update(kwargs)
+        return OrthomosaicTask.objects.create(**defaults)
+
+    def test_full_upload_flow(self):
+        self._login('agro')
+        with mock.patch('api.webodm.create_project', return_value=7) as cp, \
+                mock.patch('api.webodm.create_partial_task', return_value='abc'):
+            res = self.client.post(
+                '/api/orthomosaics/', {'land': str(self.land.id), 'preset': 'fast'}
+            )
+        self.assertEqual(res.status_code, 201)
+        cp.assert_called_once()
+        self.land.refresh_from_db()
+        self.assertEqual(self.land.webodm_project_id, 7)
+        task_id = res.data['id']
+
+        with mock.patch('api.webodm.upload_images') as up:
+            for batch in (['a.jpg', 'b.jpg'], ['c.jpg']):
+                files = [_upload(n.replace('.jpg', '.png')) for n in batch]
+                res = self.client.post(
+                    f'/api/orthomosaics/{task_id}/images/', {'images': files},
+                    format='multipart',
+                )
+                self.assertEqual(res.status_code, 200)
+        self.assertEqual(up.call_count, 2)
+        self.assertEqual(res.data['image_count'], 3)
+
+        with mock.patch('api.webodm.commit_task') as ct:
+            res = self.client.post(f'/api/orthomosaics/{task_id}/commit/')
+        self.assertEqual(res.status_code, 202)
+        ct.assert_called_once_with(7, 'abc')
+        self.assertEqual(res.data['status'], 'queued')
+
+    def test_second_run_reuses_land_project(self):
+        self.land.webodm_project_id = 7
+        self.land.save()
+        self._login('agro')
+        with mock.patch('api.webodm.create_project') as cp, \
+                mock.patch('api.webodm.create_partial_task', return_value='xyz') as ct:
+            self.client.post('/api/orthomosaics/', {'land': str(self.land.id)})
+        cp.assert_not_called()
+        self.assertEqual(ct.call_args.args[0], 7)
+
+    def test_commit_needs_two_images(self):
+        task = self._task(image_count=1)
+        self._login('agro')
+        res = self.client.post(f'/api/orthomosaics/{task.id}/commit/')
+        self.assertEqual(res.status_code, 400)
+
+    @override_settings(WEBODM_URL='')
+    def test_503_when_not_configured(self):
+        self._login('agro')
+        res = self.client.post('/api/orthomosaics/', {'land': str(self.land.id)})
+        self.assertEqual(res.status_code, 503)
+        res = self.client.get('/api/orthomosaics/')
+        self.assertFalse(res.data['configured'])
+
+    def test_farmer_can_view_but_not_start(self):
+        self._task(status=OrthomosaicTask.Status.COMPLETED)
+        self._login('farmer')
+        res = self.client.get(f'/api/orthomosaics/?land={self.land.id}')
+        self.assertEqual(len(res.data['results']), 1)
+        res = self.client.post('/api/orthomosaics/', {'land': str(self.land.id)})
+        self.assertEqual(res.status_code, 403)
+
+    def test_other_agronomist_cannot_see_task(self):
+        task = self._task()
+        self._login('other')
+        self.assertEqual(self.client.get(f'/api/orthomosaics/{task.id}/').status_code, 404)
+        self.assertEqual(self.client.get('/api/orthomosaics/').data['results'], [])
+
+    def test_sync_maps_completed_and_exposes_signed_tiles(self):
+        task = self._task(status=OrthomosaicTask.Status.RUNNING)
+        info = {
+            'status': webodm.STATUS_COMPLETED, 'running_progress': 1.0,
+            'images_count': 42, 'processing_time': 60000,
+            'available_assets': ['orthophoto.tif', 'all.zip'],
+        }
+        tj = {'bounds': [3.0, 36.0, 3.01, 36.01], 'minzoom': 14, 'maxzoom': 22}
+        self._login('agro')
+        with mock.patch('api.webodm.get_task', return_value=info), \
+                mock.patch('api.webodm.orthophoto_tilejson', return_value=tj):
+            res = self.client.get(f'/api/orthomosaics/{task.id}/')
+        self.assertEqual(res.data['status'], 'completed')
+        self.assertEqual(res.data['image_count'], 42)
+        self.assertEqual(res.data['orthophoto']['bounds'], tj['bounds'])
+        self.assertEqual([a['name'] for a in res.data['assets']], ['orthophoto.tif', 'all.zip'])
+
+        # The signed tile URL works without a Bearer token; a forged one doesn't.
+        self.client.credentials()
+        tile_url = res.data['orthophoto']['tiles_url'].format(z=18, x=1, y=2)
+        with mock.patch('api.webodm.get_tile', return_value=b'\x89PNG') as gt:
+            ok = self.client.get(tile_url)
+        self.assertEqual(ok.status_code, 200)
+        gt.assert_called_once_with(7, 'abc', 18, 1, 2)
+        bad = self.client.get(f'/api/orthomosaics/{task.id}/tiles/18/1/2.png?sig=nope')
+        self.assertEqual(bad.status_code, 403)
+
+    def test_signature_is_bound_to_its_task(self):
+        a = self._task(status=OrthomosaicTask.Status.COMPLETED)
+        b = self._task(status=OrthomosaicTask.Status.COMPLETED)
+        self.assertFalse(orthomosaic.check_access_token(b.id, orthomosaic.access_token(a)))
+
+    def test_failed_task_records_error(self):
+        task = self._task(status=OrthomosaicTask.Status.QUEUED)
+        info = {'status': webodm.STATUS_FAILED, 'last_error': 'Not enough overlap'}
+        with mock.patch('api.webodm.get_task', return_value=info):
+            orthomosaic.sync(task, force=True)
+        self.assertEqual(task.status, 'failed')
+        self.assertEqual(task.error, 'Not enough overlap')

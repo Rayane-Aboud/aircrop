@@ -42,6 +42,10 @@ class Land(models.Model):
     boundary = models.JSONField(null=True, blank=True)
     boundary_updated_at = models.DateTimeField(null=True, blank=True)
 
+    # The WebODM project holding this land's orthomosaic tasks (api/webodm.py).
+    # Created lazily on the first run.
+    webodm_project_id = models.IntegerField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -145,3 +149,75 @@ class AnalysisImage(models.Model):
 
     def __str__(self):
         return f'{self.analysis_id} · image {self.order}'
+
+
+class OrthomosaicTask(models.Model):
+    """
+    One WebODM processing run for a land: overlapping drone photos stitched
+    into a georeferenced orthophoto (and, with the full preset, DSM/DTM and a
+    3D model).
+
+    WebODM owns the processing and the outputs; this row mirrors its state so
+    lists stay role-scoped and fast. It's re-synced lazily from WebODM when
+    someone reads a task that isn't finished yet (see api/orthomosaic.py).
+    """
+
+    class Status(models.TextChoices):
+        UPLOADING = 'uploading', 'Uploading'
+        QUEUED = 'queued', 'Queued'
+        RUNNING = 'running', 'Processing'
+        COMPLETED = 'completed', 'Completed'
+        FAILED = 'failed', 'Failed'
+        CANCELED = 'canceled', 'Canceled'
+
+    class Preset(models.TextChoices):
+        FAST = 'fast', 'Fast orthophoto'
+        FULL = 'full', 'Full 3D'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    land = models.ForeignKey(
+        Land,
+        on_delete=models.CASCADE,
+        related_name='orthomosaics',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_orthomosaics',
+    )
+    name = models.CharField(max_length=255)
+    preset = models.CharField(max_length=10, choices=Preset.choices, default=Preset.FAST)
+
+    webodm_project_id = models.IntegerField()
+    webodm_task_id = models.CharField(max_length=64)
+
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPLOADING)
+    # 0–100, from WebODM's running_progress.
+    progress = models.FloatField(default=0)
+    image_count = models.PositiveIntegerField(default=0)
+    # Names WebODM reports as downloadable (orthophoto.tif, all.zip, …).
+    available_assets = models.JSONField(default=list, blank=True)
+    # From the orthophoto tiles.json: [west, south, east, north] + zoom range.
+    orthophoto_bounds = models.JSONField(null=True, blank=True)
+    orthophoto_minzoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    orthophoto_maxzoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    processing_time_ms = models.BigIntegerField(null=True, blank=True)
+
+    error = models.TextField(blank=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.name} ({self.status})'
+
+    @property
+    def is_finished(self):
+        return self.status in (
+            self.Status.COMPLETED, self.Status.FAILED, self.Status.CANCELED,
+        )

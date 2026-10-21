@@ -15,4 +15,7 @@ COPY . .
 # Apply DB migrations on startup (idempotent), then serve with Gunicorn.
 # Safe with a single replica; the schema is created/updated against Postgres
 # before the app starts accepting traffic.
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --timeout 120"]
+# Threaded workers: orthomosaic map tiles arrive ~20 at a time and asset
+# downloads stream for minutes; a single sync worker would serialise the tiles
+# and kill long downloads at --timeout.
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --threads 8"]

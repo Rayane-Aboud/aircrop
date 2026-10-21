@@ -4,12 +4,19 @@ import { downloadReportPdf, getAnalysisStatus, listLands, listReports } from '..
 import type { AnalysisResult, Land, ReportRow } from '../api'
 import AnalysisDrawer from '../components/AnalysisDrawer'
 import LandMap from '../components/LandMap'
+import OrthomosaicPanel from '../components/OrthomosaicPanel'
 import UploadPanel from '../components/UploadPanel'
 import WeatherStrip from '../components/WeatherStrip'
 
 const POLL_INTERVAL_MS = 2000
 
-type Tab = 'analysis' | 'map'
+type Tab = 'analysis' | 'map' | 'orthomosaic'
+
+const TAB_LABEL: Record<Tab, string> = {
+  analysis: 'Analysis',
+  map: 'Map & borders',
+  orthomosaic: 'Orthomosaic',
+}
 
 const VERDICT_PILL: Record<string, string> = {
   healthy: 'pill pill-green',
@@ -155,7 +162,7 @@ export default function LandDetail() {
       {landId && <WeatherStrip landId={landId} />}
 
       <div className="flex gap-1 border-b" style={{ borderColor: 'var(--border)' }}>
-        {(['analysis', 'map'] as Tab[]).map((t) => {
+        {(['analysis', 'map', 'orthomosaic'] as Tab[]).map((t) => {
           const activeTab = tab === t
           return (
             <button
@@ -169,13 +176,21 @@ export default function LandDetail() {
                 marginBottom: -1,
               }}
             >
-              {t === 'analysis' ? 'Analysis' : 'Map & borders'}
+              {TAB_LABEL[t]}
             </button>
           )
         })}
       </div>
 
-      {tab === 'map' ? (
+      {tab === 'orthomosaic' ? (
+        land ? (
+          <OrthomosaicPanel land={land} />
+        ) : (
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            Loading land…
+          </p>
+        )
+      ) : tab === 'map' ? (
         <section className="panel p-5">
           {land ? (
             <LandMap land={land} onSaved={setLand} />

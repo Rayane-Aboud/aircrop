@@ -3,9 +3,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
+from django.views.decorators.http import require_GET
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
@@ -14,8 +15,8 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsAgronomistOrSuperAdmin
 
-from . import exif, pipeline, weather
-from .models import AnalysisImage, ImageAnalysis, Land
+from . import exif, orthomosaic, pipeline, weather, webodm
+from .models import AnalysisImage, ImageAnalysis, Land, OrthomosaicTask
 from .serializers import LandSerializer, ReportListSerializer
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,10 @@ def scoped_lands(user):
     if user.is_agronomist:
         return Land.objects.filter(agronomist=user)
     return Land.objects.filter(farmer=user)  # farmer
+
+
+def scoped_orthomosaics(user):
+    return OrthomosaicTask.objects.filter(land__in=scoped_lands(user))
 
 
 def scoped_analyses(user):
@@ -315,6 +320,172 @@ def weather_now(request):
         'forecast': live['forecast'],
         'fetched_at': timezone.now().isoformat(),
     })
+
+
+# --------------------------------------------------------------------------
+# Orthomosaics (WebODM). Upload is batched: create → images (×N) → commit.
+# --------------------------------------------------------------------------
+def _webodm_error(exc):
+    return Response({'error': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+def _get_orthomosaic(request, task_id):
+    try:
+        return scoped_orthomosaics(request.user).select_related('land').get(id=task_id)
+    except OrthomosaicTask.DoesNotExist:
+        return None
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def orthomosaics(request):
+    if request.method == 'GET':
+        qs = scoped_orthomosaics(request.user)
+        land_id = request.query_params.get('land')
+        if land_id:
+            qs = qs.filter(land_id=land_id)
+        tasks = [orthomosaic.sync(t) for t in qs[:50]]
+        return Response({
+            'configured': webodm.is_configured(),
+            'results': [orthomosaic.payload(t) for t in tasks],
+        })
+
+    if not IsAgronomistOrSuperAdmin().has_permission(request, None):
+        raise PermissionDenied('Only agronomists can start orthomosaic runs.')
+    if not webodm.is_configured():
+        return Response(
+            {'error': 'Orthomosaic processing is not configured on this server.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    land_id = request.data.get('land')
+    try:
+        land = scoped_lands(request.user).get(id=land_id)
+    except (Land.DoesNotExist, ValueError, TypeError):
+        return Response({'error': 'Land not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    preset = request.data.get('preset') or OrthomosaicTask.Preset.FAST
+    if preset not in OrthomosaicTask.Preset.values:
+        return Response({'error': 'Unknown preset.'}, status=status.HTTP_400_BAD_REQUEST)
+    name = (request.data.get('name') or '').strip() or (
+        f'{land.name} · {timezone.localtime():%Y-%m-%d %H:%M}'
+    )
+
+    try:
+        task = orthomosaic.start_task(land, request.user, name[:255], preset)
+    except webodm.WebODMError as exc:
+        return _webodm_error(exc)
+    return Response(orthomosaic.payload(task), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def orthomosaic_detail(request, task_id):
+    task = _get_orthomosaic(request, task_id)
+    if task is None:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(orthomosaic.payload(orthomosaic.sync(task)))
+
+
+@api_view(['POST'])
+@permission_classes([IsAgronomistOrSuperAdmin])
+def orthomosaic_images(request, task_id):
+    task = _get_orthomosaic(request, task_id)
+    if task is None:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+    if task.status != OrthomosaicTask.Status.UPLOADING:
+        return Response(
+            {'error': 'This run is no longer accepting images.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+    files = request.FILES.getlist('images')
+    if not files:
+        return Response(
+            {'error': 'No image files provided (expected multipart field "images").'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        orthomosaic.add_images(task, files)
+    except webodm.WebODMError as exc:
+        return _webodm_error(exc)
+    return Response(orthomosaic.payload(task))
+
+
+@api_view(['POST'])
+@permission_classes([IsAgronomistOrSuperAdmin])
+def orthomosaic_commit(request, task_id):
+    task = _get_orthomosaic(request, task_id)
+    if task is None:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+    if task.status != OrthomosaicTask.Status.UPLOADING:
+        return Response(orthomosaic.payload(task))  # already committed
+    # ODM needs overlapping shots to match; fewer than this can't produce a map.
+    if task.image_count < 2:
+        return Response(
+            {'error': 'Upload at least 2 overlapping images.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        orthomosaic.commit(task)
+    except webodm.WebODMError as exc:
+        return _webodm_error(exc)
+    return Response(orthomosaic.payload(task), status=status.HTTP_202_ACCEPTED)
+
+
+# Tiles and downloads are plain Django views authorised by the signed ``sig``
+# query param (see orthomosaic.access_token), because <img> tiles and download
+# links can't send the Bearer header.
+def _signed_orthomosaic(request, task_id):
+    if not orthomosaic.check_access_token(task_id, request.GET.get('sig')):
+        return None
+    return OrthomosaicTask.objects.filter(
+        id=task_id, status=OrthomosaicTask.Status.COMPLETED
+    ).first()
+
+
+@require_GET
+def orthomosaic_tile(request, task_id, z, x, y):
+    task = _signed_orthomosaic(request, task_id)
+    if task is None:
+        return HttpResponse(status=403)
+    try:
+        png = webodm.get_tile(task.webodm_project_id, task.webodm_task_id, z, x, y)
+    except webodm.WebODMError:
+        return HttpResponse(status=502)
+    if png is None:
+        return HttpResponse(status=404)
+    response = HttpResponse(png, content_type='image/png')
+    response['Cache-Control'] = 'private, max-age=86400'
+    return response
+
+
+@require_GET
+def orthomosaic_download(request, task_id, asset):
+    task = _signed_orthomosaic(request, task_id)
+    if task is None:
+        return HttpResponse(status=403)
+    if asset not in task.available_assets:
+        return HttpResponse(status=404)
+    try:
+        upstream = webodm.open_asset(task.webodm_project_id, task.webodm_task_id, asset)
+    except webodm.WebODMError:
+        return HttpResponse(status=502)
+
+    def stream():
+        try:
+            yield from upstream.iter_content(chunk_size=256 * 1024)
+        finally:
+            upstream.close()
+
+    response = StreamingHttpResponse(
+        stream(), content_type=upstream.headers.get('Content-Type', 'application/octet-stream')
+    )
+    if 'Content-Length' in upstream.headers:
+        response['Content-Length'] = upstream.headers['Content-Length']
+    response['Content-Disposition'] = (
+        f'attachment; filename="aircrop-{task.land_id}-{asset}"'
+    )
+    return response
 
 
 # --------------------------------------------------------------------------

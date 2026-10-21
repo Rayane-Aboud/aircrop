@@ -16,6 +16,15 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Local dev: load KEY=VALUE lines from backend/.env (gitignored; written by
+# scripts/webodm.sh). Real environment variables always win.
+_env_file = BASE_DIR / '.env'
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _key, _sep, _value = _line.strip().partition('=')
+        if _sep and not _key.startswith('#'):
+            os.environ.setdefault(_key.strip(), _value.strip())
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -194,3 +203,10 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+# WebODM (drone photogrammetry → orthomosaics; see api/webodm.py). Runs as a
+# separate service; Aircrop talks to it with one service account. Leave
+# WEBODM_URL empty to disable the Orthomosaic feature.
+WEBODM_URL = os.environ.get('WEBODM_URL', '')
+WEBODM_USERNAME = os.environ.get('WEBODM_USERNAME', '')
+WEBODM_PASSWORD = os.environ.get('WEBODM_PASSWORD', '')

@@ -55,6 +55,35 @@ spec:
         # 'gemini-flash-latest' is a stable alias; override here if needed.
         - name: GEMINI_MODEL
           value: "gemini-flash-latest"
+        # WebODM (orthomosaics, api/webodm.py). WebODM runs as its own stack,
+        # NOT in this cluster: on a host with Docker,
+        #   git clone https://github.com/WebODM/WebODM && cd WebODM
+        #   ./webodm.sh start --detached --port 8010
+        # then create a dedicated user in its UI (Administration → Accounts)
+        # and store the URL + that user's credentials, out-of-band:
+        #   kubectl create secret generic webodm-secret \
+        #     --from-literal=url='http://<webodm-host>:8010' \
+        #     --from-literal=username='aircrop' --from-literal=password='...'
+        # optional: true — without the secret the Orthomosaic tab just shows
+        # "not enabled" and the rest of the app is unaffected.
+        - name: WEBODM_URL
+          valueFrom:
+            secretKeyRef:
+              name: webodm-secret
+              key: url
+              optional: true
+        - name: WEBODM_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: webodm-secret
+              key: username
+              optional: true
+        - name: WEBODM_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: webodm-secret
+              key: password
+              optional: true
         volumeMounts:
         - name: media
           mountPath: /app/media

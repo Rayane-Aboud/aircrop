@@ -19,6 +19,28 @@ urlpatterns = [
         views.analysis_report_pdf,
         name='analysis-report-pdf',
     ),
+    path('orthomosaics/', views.orthomosaics, name='orthomosaics'),
+    path('orthomosaics/<uuid:task_id>/', views.orthomosaic_detail, name='orthomosaic-detail'),
+    path(
+        'orthomosaics/<uuid:task_id>/images/',
+        views.orthomosaic_images,
+        name='orthomosaic-images',
+    ),
+    path(
+        'orthomosaics/<uuid:task_id>/commit/',
+        views.orthomosaic_commit,
+        name='orthomosaic-commit',
+    ),
+    path(
+        'orthomosaics/<uuid:task_id>/tiles/<int:z>/<int:x>/<int:y>.png',
+        views.orthomosaic_tile,
+        name='orthomosaic-tile',
+    ),
+    path(
+        'orthomosaics/<uuid:task_id>/download/<str:asset>',
+        views.orthomosaic_download,
+        name='orthomosaic-download',
+    ),
     path('weather/', views.weather_now, name='weather-now'),
     path('samples/', views.list_samples, name='list-samples'),
     path('samples/<str:sample_id>/image/', views.sample_image, name='sample-image'),

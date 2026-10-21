@@ -4,8 +4,8 @@ import L from 'leaflet'
 import '@geoman-io/leaflet-geoman-free'
 import 'leaflet/dist/leaflet.css'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
-import { updateLandBoundary } from '../api'
-import type { GeoPolygon, Land } from '../api'
+import { listOrthomosaics, updateLandBoundary } from '../api'
+import type { GeoPolygon, Land, Orthomosaic } from '../api'
 
 // Esri World Imagery — free, keyless, sub-metre aerial. Sharpest base for
 // tracing field corners, so it's the default.
@@ -201,6 +201,14 @@ export default function LandMap({ land, onSaved }: LandMapProps) {
   const [draft, setDraft] = useState<GeoPolygon | null>(land.boundary)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Newest drone orthophoto for this land (WebODM), offered as an overlay so
+  // the boundary can be traced on the farm's own imagery.
+  const [ortho, setOrtho] = useState<Orthomosaic | null>(null)
+  useEffect(() => {
+    listOrthomosaics(land.id)
+      .then((data) => setOrtho(data.results.find((r) => r.orthophoto) ?? null))
+      .catch(() => setOrtho(null))
+  }, [land.id])
   const saveRef = useRef<() => Promise<void>>(async () => {})
   const clearRef = useRef<() => void>(() => {})
 
@@ -278,6 +286,23 @@ export default function LandMap({ land, onSaved }: LandMapProps) {
                 maxNativeZoom={15}
               />
             </LayersControl.BaseLayer>
+            {ortho?.orthophoto && (
+              <LayersControl.Overlay
+                checked
+                name={`Drone orthophoto (${new Date(ortho.created_at).toLocaleDateString()})`}
+              >
+                <TileLayer
+                  url={ortho.orthophoto.tiles_url}
+                  bounds={L.latLngBounds(
+                    [ortho.orthophoto.bounds[1], ortho.orthophoto.bounds[0]],
+                    [ortho.orthophoto.bounds[3], ortho.orthophoto.bounds[2]],
+                  )}
+                  maxZoom={23}
+                  maxNativeZoom={ortho.orthophoto.maxzoom ?? 22}
+                  attribution="Orthophoto processed with WebODM"
+                />
+              </LayersControl.Overlay>
+            )}
           </LayersControl>
           <DrawLayer
             land={land}

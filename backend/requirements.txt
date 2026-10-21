@@ -10,6 +10,10 @@ Pillow==11.1.0
 psycopg2-binary==2.9.12
 sqlparse==0.5.5
 
+# WebODM REST client (api/webodm.py). Already pulled in by ultralytics;
+# pinned here because we use it directly.
+requests==2.34.2
+
 # PDF report generation (api/report_pdf.py)
 reportlab==4.2.5
 
