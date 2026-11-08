@@ -1,9 +1,10 @@
 # Aircrop: crop health from a single photo
 
-**Upload a field photo, get a crop-health verdict, an annotated image and an agronomic report as a PDF.**
-Built for [AirCrop](https://aircrop.io), an agri-tech startup using drones and AI.
+You upload a photo of a field, and Aircrop tells you whether the crop looks healthy or stressed. It
+also gives you an annotated image and a short agronomy report you can download as a PDF. I built it for
+[AirCrop](https://aircrop.io), an agri-tech startup that uses drones and AI.
 
-📄 [Sample report (PDF)](aircrop-report-sample.pdf)
+You can see what a report looks like here: [sample report (PDF)](aircrop-report-sample.pdf).
 
 ## How it works
 
@@ -13,43 +14,43 @@ photo ──► EXIF (date, GPS) ──► YOLO crop-health model ──► weat
                                     └──────────► LLM report ◄────┘ ──► PDF
 ```
 
-1. **Upload**: the React frontend sends the photo; the Django API answers at once and runs the analysis in the
-   background, so the page polls for the result.
-2. **Context**: capture date and GPS position are read from the photo's EXIF data, and the weather for that place
+1. The React frontend sends the photo. The Django API answers right away and runs the analysis in the
+   background, and the page checks back every few seconds until the result is ready.
+2. The capture date and the GPS position are read from the photo's EXIF data. The weather for that place
    and day comes from [Open-Meteo](https://open-meteo.com).
-3. **Detection**: a custom-trained [Ultralytics YOLO](https://docs.ultralytics.com) model (classes *healthy* and
-   *stressed*) produces the verdict and an annotated copy of the image.
-4. **Report**: Google Gemini turns those facts into a readable agronomic report.
-5. **PDF**: everything is assembled into a branded PDF with ReportLab.
+3. A custom-trained [Ultralytics YOLO](https://docs.ultralytics.com) model decides between *healthy* and
+   *stressed*, and draws boxes on a copy of the image.
+4. Google Gemini turns these facts into a readable agronomy report.
+5. ReportLab puts everything together in a PDF with the AirCrop branding.
 
-## Design choices
+## Some choices I made
 
-- **The model decides, the LLM explains.** The health verdict always comes from the vision model. The LLM only
-  gets the structured facts (detections, confidence, weather, place, date), is told to use nothing else, runs at
-  low temperature and must answer in a strict JSON shape.
-- **The LLM is optional.** With no API key, a network error or an unreadable answer, the app falls back to a
-  template report. The product still works.
-- **The model loads once.** PyTorch is slow to import, so the YOLO model is loaded lazily, behind a lock, and
-  cached in the worker process.
+- The health verdict always comes from the vision model, never from the LLM. The LLM only receives the
+  facts (detections, confidence, weather, place and date), is told to use nothing else, runs at a low
+  temperature and has to answer in a fixed JSON format. That way it explains the result but can't make
+  one up.
+- The app still works without the LLM. If there is no API key, the network fails or the answer can't be
+  read, it falls back to a simple template report.
+- PyTorch is slow to import, so the YOLO model is loaded only once, the first time it's needed, and then
+  kept in memory.
 
 ## Stack
 
-| Layer | Tools |
-|---|---|
-| Backend | Python, Django, PostgreSQL, Gunicorn |
-| ML | Ultralytics YOLO (PyTorch), custom-trained weights |
-| LLM | Google Gemini (REST, no SDK) |
-| Frontend | React, TypeScript, Vite, served by Nginx |
-| Infra | Docker images on GitHub Container Registry, Kubernetes manifests (backend, frontend, PostgreSQL with persistent volumes) on OVH |
+- Backend: Python, Django, PostgreSQL, Gunicorn
+- Model: Ultralytics YOLO (PyTorch), with custom-trained weights
+- Report: Google Gemini, called through its REST API
+- Frontend: React, TypeScript and Vite, served by Nginx
+- Deployment: Docker images on GitHub Container Registry, and Kubernetes manifests for the backend, the
+  frontend and PostgreSQL (with persistent volumes), running on OVH
 
-## Run it
+## Running it
 
 Backend:
 
 ```bash
 cd backend
 pip install -r requirements.txt
-export DJANGO_DEBUG=1 GEMINI_API_KEY=...   # the key is optional: without it the template report is used
+export DJANGO_DEBUG=1 GEMINI_API_KEY=...   # the key is optional, without it you get the template report
 python manage.py migrate
 python manage.py runserver
 ```
@@ -62,8 +63,9 @@ npm install
 npm run dev
 ```
 
-Locally it runs on SQLite with no setup. Set `POSTGRES_DB` (plus `POSTGRES_USER`, `POSTGRES_PASSWORD`,
-`POSTGRES_HOST`, `POSTGRES_PORT`) to use PostgreSQL, as in production.
+Locally it uses SQLite, so there is nothing to set up. To use PostgreSQL like in production, set
+`POSTGRES_DB` (and `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`).
 
-Kubernetes: build and push the images with `./build-and-push.sh`, create the Gemini key as a Secret
-(see the comment in [`k8s/backend-deployment.yaml`](k8s/backend-deployment.yaml)), then `kubectl apply -f k8s/`.
+To deploy on Kubernetes, build and push the images with `./build-and-push.sh`, create the Gemini key as
+a Secret (the comment in [`k8s/backend-deployment.yaml`](k8s/backend-deployment.yaml) shows how), then
+run `kubectl apply -f k8s/`.
